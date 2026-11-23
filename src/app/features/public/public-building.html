@@ -1,0 +1,387 @@
+<div class="min-h-dvh pb-28 sm:pb-10">
+  <!-- ===== Header ===== -->
+  <header class="sticky top-0 z-30 border-b border-line bg-white/95 backdrop-blur">
+    <div class="mx-auto flex max-w-3xl items-center gap-3 px-4 py-2.5">
+      <div class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-brand text-white">
+        <app-icon name="building" [size]="24" />
+      </div>
+      <div class="min-w-0 flex-1">
+        @if (data(); as d) {
+          <h1 class="truncate text-lg leading-tight font-extrabold">{{ d.building.name }}</h1>
+          <p class="text-sm text-ink-soft">
+            آخر تحديث: <span class="num font-semibold">{{ fmtRelative(d.stats.last_updated) }}</span>
+          </p>
+        } @else if (loading()) {
+          <div class="skeleton h-5 w-40"></div>
+          <div class="skeleton mt-1.5 h-4 w-28"></div>
+        } @else {
+          <h1 class="text-lg font-extrabold">صندوق البناء</h1>
+        }
+      </div>
+      @if (data()) {
+        <button
+          type="button"
+          class="btn-icon"
+          aria-label="تحديث"
+          (click)="load(slug().toLowerCase(), true)"
+          [disabled]="refreshing()"
+        >
+          <app-icon name="refresh" [size]="22" [class.animate-spin]="refreshing()" />
+        </button>
+      }
+      <a routerLink="/admin/login" class="btn-icon" aria-label="دخول المشرف" title="دخول المشرف">
+        <app-icon name="shield" [size]="22" />
+      </a>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-3xl space-y-4 px-4 pt-4">
+    @if (offline()) {
+      <div class="flex items-center gap-2 rounded-xl bg-exempt-bg px-4 py-3 font-semibold text-exempt">
+        <app-icon name="wifiOff" />
+        ما في إنترنت — عم نعرض آخر نسخة محفوظة
+      </div>
+    }
+
+    @switch (error()) {
+      @case ('not-found') {
+        <div class="card p-8 text-center">
+          <div class="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-exempt-bg text-exempt">
+            <app-icon name="search" [size]="30" />
+          </div>
+          <h2 class="text-xl font-bold">ما لقينا هالبناء</h2>
+          <p class="mt-2 text-ink-soft">تأكد من رمز البناء المكتوب تحت الـ QR بالمصعد.</p>
+          <a routerLink="/" [state]="{ stay: true }" class="btn-primary mt-5">جرّب رمز ثاني</a>
+        </div>
+      }
+      @case ('network') {
+        <div class="card p-8 text-center">
+          <div class="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-unpaid-bg text-unpaid">
+            <app-icon name="wifiOff" [size]="30" />
+          </div>
+          <h2 class="text-xl font-bold">ما قدرنا نفتح الصفحة</h2>
+          <p class="mt-2 text-ink-soft">تأكد من الإنترنت وجرّب مرة ثانية.</p>
+          <button type="button" class="btn-primary mt-5" (click)="load(slug().toLowerCase())">
+            <app-icon name="refresh" /> حاول مرة ثانية
+          </button>
+        </div>
+      }
+      @case ('config') {
+        <div class="card p-8 text-center">
+          <h2 class="text-xl font-bold">التطبيق غير مربوط بعد</h2>
+          <p class="mt-2 text-ink-soft">
+            لازم المشرف يضيف SUPABASE_URL و SUPABASE_ANON_KEY (شوف ملف README).
+          </p>
+        </div>
+      }
+    }
+
+    @if (loading()) {
+      <!-- Skeletons -->
+      <div class="skeleton h-44"></div>
+      <div class="skeleton h-12"></div>
+      @for (i of [1, 2, 3, 4]; track i) {
+        <div class="skeleton h-20"></div>
+      }
+    }
+
+    @if (data(); as d) {
+      <!-- ===== Announcement ===== -->
+      @if (d.building.announcement) {
+        <section class="flex gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sky-900" aria-label="إعلان">
+          <app-icon name="megaphone" [size]="24" class="mt-0.5 text-sky-700" />
+          <div class="min-w-0 flex-1">
+            <p class="text-base leading-relaxed font-semibold whitespace-pre-line">{{ d.building.announcement }}</p>
+            @if (d.building.announcement_updated_at) {
+              <p class="mt-1 text-sm text-sky-800/80">{{ fmtRelative(d.building.announcement_updated_at) }}</p>
+            }
+          </div>
+        </section>
+      }
+
+      <!-- ===== Fund summary ===== -->
+      <section class="card overflow-hidden" aria-label="صندوق البناء">
+        <div class="bg-brand px-5 py-5 text-white">
+          <p class="flex items-center gap-2 text-base font-semibold text-white/90">
+            <app-icon name="wallet" /> صندوق البناء — الرصيد الحالي
+          </p>
+          <p class="num mt-1 text-4xl font-extrabold tracking-tight" dir="auto">{{ fmtMoney(d.stats.fund_balance) }}</p>
+        </div>
+        <div class="grid grid-cols-2 divide-x divide-x-reverse divide-line border-b border-line">
+          <div class="px-4 py-3">
+            <p class="text-sm text-ink-soft">إجمالي المقبوضات</p>
+            <p class="num text-lg text-paid">{{ fmtMoney(d.stats.total_collected) }}</p>
+          </div>
+          <div class="px-4 py-3">
+            <p class="text-sm text-ink-soft">إجمالي المصاريف</p>
+            <p class="num text-lg text-unpaid">{{ fmtMoney(d.stats.total_expenses) }}</p>
+          </div>
+        </div>
+        @if (selectedCycle(); as c) {
+          <div class="px-5 py-4">
+            <div class="mb-2 flex items-baseline justify-between gap-2">
+              <p class="font-bold">{{ c.title }}</p>
+              <p class="text-base font-semibold text-ink-soft">
+                تم تحصيل <span class="num text-ink">{{ progress().paid }}</span> من
+                <span class="num text-ink">{{ progress().total }}</span> شقق
+              </p>
+            </div>
+            <div
+              class="h-4 overflow-hidden rounded-full bg-slate-100"
+              role="progressbar"
+              [attr.aria-valuenow]="progress().percent"
+              aria-valuemin="0"
+              aria-valuemax="100"
+            >
+              <div class="h-full rounded-full bg-paid transition-all" [style.width.%]="progress().percent"></div>
+            </div>
+          </div>
+        }
+      </section>
+
+      <!-- ===== Tabs (bottom bar on phones, inline on desktop) ===== -->
+      <nav
+        class="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white pb-[env(safe-area-inset-bottom)] sm:static sm:rounded-2xl sm:border sm:p-1"
+        aria-label="الأقسام"
+      >
+        <div class="mx-auto grid max-w-3xl grid-cols-3">
+          @for (t of tabs; track t.id) {
+            <button
+              type="button"
+              class="flex min-h-16 flex-col items-center justify-center gap-0.5 px-1 text-center text-sm leading-tight font-bold transition-colors sm:min-h-12 sm:flex-row sm:gap-2 sm:rounded-xl sm:text-base"
+              [class]="tab() === t.id ? 'text-brand sm:bg-brand sm:text-white' : 'text-ink-soft'"
+              [attr.aria-current]="tab() === t.id ? 'page' : null"
+              (click)="tab.set(t.id)"
+            >
+              <app-icon [name]="t.icon" [size]="24" />
+              {{ t.label }}
+            </button>
+          }
+        </div>
+      </nav>
+
+      <!-- ===== Tab 1: payments ===== -->
+      @if (tab() === 'payments') {
+        <section class="space-y-3" aria-label="الدفعات">
+          @if (cycles().length === 0) {
+            <div class="card p-8 text-center text-ink-soft">
+              <app-icon name="calendar" [size]="36" class="mx-auto mb-2 text-slate-400" />
+              <p class="text-lg font-semibold">ما في دفعات مسجلة لسا</p>
+              <p>لما المشرف يفتح شهر جديد رح تظهر هون.</p>
+            </div>
+          } @else {
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+              <label class="sr-only" for="cycle">الدورة</label>
+              <select id="cycle" class="field font-bold" [value]="selectedCycleId()" (change)="onCycleChange($event)">
+                @for (c of cycles(); track c.id) {
+                  <option [value]="c.id" [selected]="c.id === selectedCycleId()">
+                    {{ c.title }}{{ c.cycle_type === 'special' ? ' (دفعة خاصة)' : '' }}
+                  </option>
+                }
+              </select>
+              @if (floors().length > 1) {
+                <label class="sr-only" for="floor">الطابق</label>
+                <select id="floor" class="field" (change)="onFloorChange($event)">
+                  <option value="">كل الطوابق</option>
+                  @for (f of floors(); track f) {
+                    <option [value]="f">طابق {{ f }}</option>
+                  }
+                </select>
+              }
+            </div>
+
+            <div class="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1" role="group" aria-label="فلترة حسب الحالة">
+              <button type="button" class="chip" [class.chip-active]="statusFilter() === 'all'" (click)="statusFilter.set('all')">
+                الكل
+              </button>
+              <button type="button" class="chip" [class.chip-active]="statusFilter() === 'paid'" (click)="statusFilter.set('paid')">
+                <app-icon name="check" [size]="16" [stroke]="3" /> خالص
+              </button>
+              <button type="button" class="chip" [class.chip-active]="statusFilter() === 'owing'" (click)="statusFilter.set('owing')">
+                <app-icon name="x" [size]="16" [stroke]="3" /> غير مدفوع
+              </button>
+            </div>
+
+            @if (rows().length === 0) {
+              <div class="card p-6 text-center text-ink-soft">ما في شقق بهالفلترة</div>
+            }
+
+            <ul class="space-y-2">
+              @for (r of rows(); track r.unit.id) {
+                <li>
+                  <button
+                    type="button"
+                    class="card flex min-h-20 w-full items-center gap-3 px-4 py-3 text-start transition-colors hover:border-brand/40 active:bg-slate-50"
+                    (click)="openUnitId.set(r.unit.id)"
+                  >
+                    <div class="min-w-0 flex-1">
+                      <p class="truncate text-base font-bold">{{ r.unit.display_name }}</p>
+                      @if (!data()!.building.hide_resident_names) {
+                        <p class="truncate text-sm text-ink-soft">{{ r.unit.label }}</p>
+                      } @else {
+                        <p class="text-sm text-ink-soft">طابق {{ r.unit.floor }}</p>
+                      }
+                    </div>
+                    <div class="flex flex-col items-end gap-1">
+                      @if (r.payment) {
+                        <app-status-badge [status]="r.payment.status" />
+                        @if (r.payment.status !== 'exempt') {
+                          <p class="num text-sm text-ink-soft">
+                            {{ fmtNum(r.payment.amount_paid) }} / {{ fmtNum(r.payment.amount_due) }}
+                          </p>
+                        }
+                      } @else {
+                        <span class="text-sm text-ink-soft">—</span>
+                      }
+                    </div>
+                  </button>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+      }
+
+      <!-- ===== Tab 2: expenses ===== -->
+      @if (tab() === 'expenses') {
+        <section class="space-y-3" aria-label="المصاريف والفواتير">
+          @if (cycles().length > 0) {
+            <select class="field font-bold" (change)="onExpenseCycleChange($event)" aria-label="فلترة حسب الدورة">
+              <option value="all">كل المصاريف (الأحدث أولاً)</option>
+              @for (c of cycles(); track c.id) {
+                <option [value]="c.id" [selected]="c.id === expenseCycleFilter()">مصاريف {{ c.title }}</option>
+              }
+            </select>
+          }
+          <div class="flex items-center justify-between rounded-xl bg-unpaid-bg px-4 py-3 text-unpaid">
+            <span class="font-bold">المجموع</span>
+            <span class="num text-lg">{{ fmtMoney(expensesTotal()) }}</span>
+          </div>
+
+          @if (expenses().length === 0) {
+            <div class="card p-8 text-center text-ink-soft">
+              <app-icon name="receipt" [size]="36" class="mx-auto mb-2 text-slate-400" />
+              <p class="text-lg font-semibold">ما في مصاريف هون</p>
+            </div>
+          }
+
+          <ul class="space-y-2">
+            @for (e of expenses(); track e.id) {
+              <li>
+                <button
+                  type="button"
+                  class="card flex min-h-20 w-full items-center gap-3 px-4 py-3 text-start"
+                  [class.cursor-default]="!e.receipt_url"
+                  [attr.aria-label]="e.receipt_url ? e.title + ' — اعرض الفاتورة' : e.title"
+                  (click)="openExpense(e)"
+                >
+                  <div class="flex size-12 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand">
+                    <app-icon [name]="categoryMeta[e.category].icon" [size]="24" />
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <p class="truncate font-bold">{{ e.title }}</p>
+                    <p class="text-sm text-ink-soft">
+                      {{ categoryMeta[e.category].label }} · {{ fmtDate(e.expense_date) }}
+                    </p>
+                    @if (e.notes) {
+                      <p class="truncate text-sm text-ink-soft">{{ e.notes }}</p>
+                    }
+                  </div>
+                  <div class="flex flex-col items-end gap-1">
+                    <span class="num text-base">{{ fmtMoney(e.amount) }}</span>
+                    @if (e.receipt_url) {
+                      <span class="inline-flex items-center gap-1 text-sm font-bold text-brand">
+                        <app-icon name="image" [size]="16" /> الفاتورة
+                      </span>
+                    }
+                  </div>
+                </button>
+              </li>
+            }
+          </ul>
+        </section>
+      }
+
+      <!-- ===== Tab 3: services ===== -->
+      @if (tab() === 'services') {
+        <section class="space-y-3" aria-label="خدمات البناء">
+          <h2 class="text-lg font-extrabold">أرقام الطوارئ والصيانة</h2>
+          @if (d.building.emergency_contacts.length === 0) {
+            <div class="card p-8 text-center text-ink-soft">
+              <app-icon name="phone" [size]="36" class="mx-auto mb-2 text-slate-400" />
+              <p class="text-lg font-semibold">ما في أرقام مضافة بعد</p>
+            </div>
+          }
+          @for (c of d.building.emergency_contacts; track $index) {
+            <div class="card p-4">
+              <p class="text-sm font-bold text-brand">{{ c.role }}</p>
+              <p class="text-lg font-bold">{{ c.name }}</p>
+              <p class="num text-ink-soft" dir="ltr" style="text-align: end">{{ prettyPhone(c.phone) }}</p>
+              <div class="mt-3 grid grid-cols-2 gap-2">
+                <a class="btn-primary text-lg" [href]="telHref(c.phone)">
+                  <app-icon name="phone" [size]="22" /> اتصال
+                </a>
+                <a class="btn-whatsapp text-lg" [href]="waHref(c.phone)" target="_blank" rel="noopener">
+                  <app-icon name="whatsapp" [size]="22" /> واتساب
+                </a>
+              </div>
+            </div>
+          }
+        </section>
+      }
+    }
+  </main>
+</div>
+
+<!-- ===== Unit history drawer ===== -->
+<app-sheet [open]="!!openUnit()" [title]="openUnit()?.display_name ?? ''" (closed)="openUnitId.set(null)">
+  @if (openUnit(); as u) {
+    <p class="-mt-1 mb-4 text-ink-soft">{{ u.label }} · طابق {{ u.floor }}</p>
+    <div
+      class="mb-4 flex items-center justify-between rounded-2xl px-4 py-4"
+      [class]="u.total_arrears > 0 ? 'bg-unpaid-bg text-unpaid' : 'bg-paid-bg text-paid'"
+    >
+      <span class="text-lg font-bold">إجمالي المتراكم</span>
+      <span class="num text-2xl">{{ u.total_arrears > 0 ? fmtMoney(u.total_arrears) : 'خالص ✓' }}</span>
+    </div>
+    @if (openUnitHistory().length === 0) {
+      <p class="py-6 text-center text-ink-soft">ما في دفعات مسجلة لهالشقة</p>
+    }
+    <ul class="divide-y divide-line">
+      @for (h of openUnitHistory(); track h.cycle.id) {
+        <li class="flex min-h-16 items-center gap-3 py-3">
+          <div class="min-w-0 flex-1">
+            <p class="font-bold">{{ h.cycle.title }}</p>
+            @if (h.payment.status !== 'exempt') {
+              <p class="num text-sm text-ink-soft">
+                دفع {{ fmtNum(h.payment.amount_paid) }} من {{ fmtNum(h.payment.amount_due) }}
+                @if (remaining(h.payment) > 0) {
+                  · الباقي عليه <span class="text-unpaid">{{ fmtNum(remaining(h.payment)) }}</span>
+                }
+              </p>
+            }
+          </div>
+          <app-status-badge [status]="h.payment.status" />
+        </li>
+      }
+    </ul>
+  }
+</app-sheet>
+
+<!-- ===== Receipt lightbox ===== -->
+@if (receipt(); as r) {
+  <div class="fixed inset-0 z-50 flex flex-col bg-black/95 animate-fade-in" role="dialog" aria-modal="true" [attr.aria-label]="r.title">
+    <div class="flex items-center gap-3 p-3 text-white">
+      <div class="min-w-0 flex-1">
+        <p class="truncate font-bold">{{ r.title }}</p>
+        <p class="num text-sm text-white/80">{{ fmtMoney(r.amount) }} · {{ fmtDate(r.expense_date) }}</p>
+      </div>
+      <button type="button" class="btn-icon text-white hover:bg-white/10" aria-label="إغلاق" (click)="receipt.set(null)">
+        <app-icon name="x" [size]="28" />
+      </button>
+    </div>
+    <button type="button" class="flex min-h-0 flex-1 items-center justify-center p-2" (click)="receipt.set(null)" aria-label="إغلاق">
+      <img [src]="r.receipt_url" [alt]="'فاتورة: ' + r.title" class="max-h-full max-w-full rounded-lg object-contain" />
+    </button>
+  </div>
+}
