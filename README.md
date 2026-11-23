@@ -10,6 +10,8 @@ Supabase (Postgres + RLS + Auth + Storage) · Vercel · GitHub Actions keep-aliv
 
 > Project decisions, conventions and change log live in [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md).
 >
+> **Live:** https://building-committee-app.vercel.app — residents: [`/b/al-yasmin-14`](https://building-committee-app.vercel.app/b/al-yasmin-14) · admin: [`/admin/login`](https://building-committee-app.vercel.app/admin/login)
+>
 > **Pilot status:** the Supabase project is already set up and linked through [`public-config.json`](public-config.json)
 > (URL + browser-safe publishable key). Steps 1–2 and 5 below are only needed for a fresh project.
 

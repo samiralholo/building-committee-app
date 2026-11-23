@@ -92,7 +92,7 @@ Core helpers: `core/format.ts` (Arabic months, money, status/category meta, `der
 | Supabase | org `tracker` (Free), project **building-committee** (Europe), ref `slqjhpvwsctwvajpnorq`, URL `https://slqjhpvwsctwvajpnorq.supabase.co`; owner signs in with GitHub |
 | Supabase state | migration 001 + seed applied; Auth "Allow new users to sign up" = **off**; 1 admin user (created by Samir); pilot building `al-yasmin-14` |
 | Keys | publishable key committed in `public-config.json` (browser-safe by design). Secret keys and the DB password live only in the Supabase dashboard; never commit them |
-| Vercel | not deployed yet |
+| Vercel | team `samir-alholos-projects` (Hobby), project `building-committee-app`, auto-deploys from `main`. **Production: https://building-committee-app.vercel.app** · residents: `/b/al-yasmin-14` · admin: `/admin/login` |
 
 Live checks (2026-11-24): public RPC returns the building with no phone fields; anon `select` on `units` → 401; `keepalive_ping` → 200; `/auth/v1/signup` → 422 `signup_disabled`.
 
@@ -143,3 +143,4 @@ Pilot mode = Supabase "Allow new users to sign up" **off** + `ENABLE_PUBLIC_SIGN
 | --- | --- |
 | 2026-11-24 | v0.1 — Initial build: schema/RLS/RPCs/storage/seed, public resident view, admin portal, PWA, Vercel config, keep-alive workflow, README, this context file. Repo created at `github.com/samiralholo/building-committee-app`. |
 | 2026-11-24 | Repo made **public** and pushed. Supabase project `building-committee` created (GitHub sign-in), migration + seed applied, public signups disabled, admin user created. Added `public-config.json` (URL + publishable key + default slug) as build/cron fallback; keep-alive sends `apikey` header only. |
+| 2026-11-24 | Deployed to Vercel (Git-connected, no env vars needed thanks to `public-config.json`). Verified live: `/` → `/b/al-yasmin-14` with real data, deep link → admin guard → login, service worker active. |
