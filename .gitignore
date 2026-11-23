@@ -1,0 +1,35 @@
+# Dependencies
+/node_modules
+
+# Build output
+/dist
+/tmp
+/out-tsc
+/.angular
+/coverage
+
+# Generated at build time from env vars (see scripts/set-env.mjs)
+/src/environments/environment.ts
+
+# Environment files (never commit keys)
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+/.vscode/*
+!/.vscode/extensions.json
+
+# Logs
+npm-debug.log*
+pnpm-debug.log*
+*.log
+
+# Vercel / Supabase local
+.vercel
+supabase/.temp
+supabase/.branches
