@@ -1,0 +1,374 @@
+import { Injectable, computed, inject, signal } from '@angular/core';
+import { AuthService } from '../../core/auth.service';
+import { RECEIPTS_BUCKET } from '../../core/config';
+import { deriveStatus, remaining } from '../../core/format';
+import { BillingCycle, Building, CycleType, Expense, Payment, Unit } from '../../core/models';
+import { SupabaseService } from '../../core/supabase.service';
+
+const SELECTED_BUILDING_KEY = 'bc:admin-building';
+
+export type BuildingDraft = Pick<Building, 'name' | 'slug' | 'currency' | 'default_monthly_fee'>;
+export type UnitDraft = Pick<Unit, 'label' | 'floor' | 'resident_name' | 'whatsapp_phone' | 'is_occupied'>;
+export type ExpenseDraft = Pick<Expense, 'title' | 'category' | 'amount' | 'expense_date' | 'cycle_id' | 'notes'>;
+
+function sortUnits(list: Unit[]): Unit[] {
+  return [...list].sort((a, b) => a.sort_order - b.sort_order || a.floor - b.floor || a.label.localeCompare(b.label, 'ar'));
+}
+
+function sortCycles(list: BillingCycle[]): BillingCycle[] {
+  return [...list].sort((a, b) => b.cycle_date.localeCompare(a.cycle_date) || b.created_at.localeCompare(a.created_at));
+}
+
+function sortExpenses(list: Expense[]): Expense[] {
+  return [...list].sort((a, b) => b.expense_date.localeCompare(a.expense_date) || (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+}
+
+/** Single source of truth for the admin portal. Provided by AdminShell. */
+@Injectable()
+export class AdminStore {
+  private readonly db = inject(SupabaseService).client;
+  private readonly auth = inject(AuthService);
+
+  readonly buildings = signal<Building[]>([]);
+  readonly buildingId = signal<string | null>(null);
+  readonly units = signal<Unit[]>([]);
+  readonly cycles = signal<BillingCycle[]>([]);
+  readonly payments = signal<Payment[]>([]);
+  readonly expenses = signal<Expense[]>([]);
+  readonly loading = signal(true);
+  readonly loadError = signal(false);
+
+  readonly building = computed(() => this.buildings().find((b) => b.id === this.buildingId()) ?? null);
+  readonly latestCycle = computed(() => this.cycles()[0] ?? null);
+
+  /** The cycle chosen on the dashboard / payments grid (shared, defaults to latest). */
+  readonly selectedCycleId = signal<string | null>(null);
+  readonly selectedCycle = computed(
+    () => this.cycles().find((c) => c.id === this.selectedCycleId()) ?? this.latestCycle(),
+  );
+
+  readonly totalCollected = computed(() => this.payments().reduce((s, p) => s + Number(p.amount_paid), 0));
+  readonly totalExpenses = computed(() => this.expenses().reduce((s, e) => s + Number(e.amount), 0));
+  readonly fundBalance = computed(() => this.totalCollected() - this.totalExpenses());
+  readonly totalArrears = computed(() => this.payments().reduce((s, p) => s + remaining(p), 0));
+
+  paymentsFor(cycleId: string | null | undefined): Payment[] {
+    return cycleId ? this.payments().filter((p) => p.cycle_id === cycleId) : [];
+  }
+
+  // ---------------------------------------------------------------- loading
+
+  async load(): Promise<void> {
+    this.loading.set(true);
+    this.loadError.set(false);
+    try {
+      const { data, error } = await this.db.from('buildings').select('*').order('created_at');
+      if (error) throw error;
+      const list = (data ?? []) as Building[];
+      this.buildings.set(list);
+      let preferred: string | null = null;
+      try {
+        preferred = localStorage.getItem(SELECTED_BUILDING_KEY);
+      } catch {
+        /* ignore */
+      }
+      const chosen = list.find((b) => b.id === preferred) ?? list[0] ?? null;
+      this.buildingId.set(chosen?.id ?? null);
+      if (chosen) await this.loadBuildingData(chosen.id);
+    } catch {
+      this.loadError.set(true);
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  async switchBuilding(id: string): Promise<void> {
+    this.buildingId.set(id);
+    this.selectedCycleId.set(null);
+    try {
+      localStorage.setItem(SELECTED_BUILDING_KEY, id);
+    } catch {
+      /* ignore */
+    }
+    this.loading.set(true);
+    try {
+      await this.loadBuildingData(id);
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  private async loadBuildingData(buildingId: string): Promise<void> {
+    const [units, cycles, payments, expenses] = await Promise.all([
+      this.db.from('units').select('*').eq('building_id', buildingId),
+      this.db.from('billing_cycles').select('*').eq('building_id', buildingId),
+      this.db.from('payments').select('*').eq('building_id', buildingId),
+      this.db.from('expenses').select('*').eq('building_id', buildingId),
+    ]);
+    const err = units.error ?? cycles.error ?? payments.error ?? expenses.error;
+    if (err) throw err;
+    this.units.set(sortUnits((units.data ?? []) as Unit[]));
+    this.cycles.set(sortCycles((cycles.data ?? []) as BillingCycle[]));
+    this.payments.set((payments.data ?? []) as Payment[]);
+    this.expenses.set(sortExpenses((expenses.data ?? []) as Expense[]));
+  }
+
+  private requireBuilding(): Building {
+    const b = this.building();
+    if (!b) throw new Error('no building');
+    return b;
+  }
+
+  // ---------------------------------------------------------------- building
+
+  async createBuilding(draft: BuildingDraft): Promise<void> {
+    const ownerId = this.auth.user()?.id;
+    if (!ownerId) throw new Error('not allowed');
+    const { data, error } = await this.db
+      .from('buildings')
+      .insert({ ...draft, owner_id: ownerId })
+      .select()
+      .single();
+    if (error) throw error;
+    const b = data as Building;
+    this.buildings.update((list) => [...list, b]);
+    await this.switchBuilding(b.id);
+  }
+
+  async updateBuilding(patch: Partial<Omit<Building, 'id' | 'owner_id' | 'created_at'>>): Promise<void> {
+    const b = this.requireBuilding();
+    const { data, error } = await this.db.from('buildings').update(patch).eq('id', b.id).select().single();
+    if (error) throw error;
+    this.buildings.update((list) => list.map((x) => (x.id === b.id ? (data as Building) : x)));
+  }
+
+  // ---------------------------------------------------------------- cycles
+
+  async createCycle(input: { title: string; cycle_type: CycleType; amount: number; date: string }): Promise<BillingCycle> {
+    const b = this.requireBuilding();
+    const { data, error } = await this.db.rpc('create_billing_cycle', {
+      p_building_id: b.id,
+      p_title: input.title,
+      p_cycle_type: input.cycle_type,
+      p_amount: input.amount,
+      p_cycle_date: input.date,
+    });
+    if (error) throw error;
+    const cycle = data as BillingCycle;
+    const { data: rows, error: pErr } = await this.db.from('payments').select('*').eq('cycle_id', cycle.id);
+    if (pErr) throw pErr;
+    this.cycles.update((list) => sortCycles([...list, cycle]));
+    this.payments.update((list) => [...list, ...((rows ?? []) as Payment[])]);
+    this.selectedCycleId.set(cycle.id);
+    return cycle;
+  }
+
+  async deleteCycle(cycle: BillingCycle): Promise<void> {
+    const { error } = await this.db.from('billing_cycles').delete().eq('id', cycle.id);
+    if (error) throw error;
+    this.cycles.update((list) => list.filter((c) => c.id !== cycle.id));
+    this.payments.update((list) => list.filter((p) => p.cycle_id !== cycle.id));
+    this.expenses.update((list) => list.map((e) => (e.cycle_id === cycle.id ? { ...e, cycle_id: null } : e)));
+    if (this.selectedCycleId() === cycle.id) this.selectedCycleId.set(null);
+  }
+
+  /** Units added after a cycle was created get their payment row with one tap. */
+  async addMissingPayments(cycle: BillingCycle): Promise<number> {
+    const b = this.requireBuilding();
+    const existing = new Set(this.paymentsFor(cycle.id).map((p) => p.unit_id));
+    const missing = this.units().filter((u) => !existing.has(u.id));
+    if (!missing.length) return 0;
+    const { data, error } = await this.db
+      .from('payments')
+      .insert(
+        missing.map((u) => ({
+          building_id: b.id,
+          cycle_id: cycle.id,
+          unit_id: u.id,
+          amount_due: u.is_occupied ? cycle.default_amount : 0,
+          amount_paid: 0,
+          status: u.is_occupied ? 'unpaid' : 'exempt',
+        })),
+      )
+      .select();
+    if (error) throw error;
+    this.payments.update((list) => [...list, ...((data ?? []) as Payment[])]);
+    return missing.length;
+  }
+
+  // ---------------------------------------------------------------- payments
+
+  private replacePayment(next: Payment): void {
+    this.payments.update((list) => list.map((p) => (p.id === next.id ? next : p)));
+  }
+
+  /** One tap: full amount paid. Optimistic, reverts on failure. */
+  async markPaid(payment: Payment): Promise<void> {
+    const optimistic: Payment = {
+      ...payment,
+      amount_paid: Number(payment.amount_due),
+      status: 'paid',
+      paid_at: new Date().toISOString(),
+    };
+    this.replacePayment(optimistic);
+    const { data, error } = await this.db
+      .from('payments')
+      .update({ amount_paid: optimistic.amount_paid, status: 'paid', paid_at: optimistic.paid_at })
+      .eq('id', payment.id)
+      .select()
+      .single();
+    if (error) {
+      this.replacePayment(payment);
+      throw error;
+    }
+    this.replacePayment(data as Payment);
+  }
+
+  async updatePayment(
+    payment: Payment,
+    changes: { amount_due: number; amount_paid: number; exempt: boolean; notes: string | null },
+  ): Promise<void> {
+    const status = deriveStatus(changes.amount_due, changes.amount_paid, changes.exempt);
+    const patch = {
+      amount_due: changes.exempt ? 0 : changes.amount_due,
+      amount_paid: changes.exempt ? 0 : changes.amount_paid,
+      status,
+      notes: changes.notes,
+      paid_at: status === 'paid' ? (payment.paid_at ?? new Date().toISOString()) : status === 'partial' ? payment.paid_at : null,
+    };
+    this.replacePayment({ ...payment, ...patch });
+    const { data, error } = await this.db.from('payments').update(patch).eq('id', payment.id).select().single();
+    if (error) {
+      this.replacePayment(payment);
+      throw error;
+    }
+    this.replacePayment(data as Payment);
+  }
+
+  // ---------------------------------------------------------------- units
+
+  async saveUnit(draft: UnitDraft, existing?: Unit): Promise<void> {
+    const b = this.requireBuilding();
+    if (existing) {
+      const { data, error } = await this.db.from('units').update(draft).eq('id', existing.id).select().single();
+      if (error) throw error;
+      this.units.update((list) => sortUnits(list.map((u) => (u.id === existing.id ? (data as Unit) : u))));
+    } else {
+      const nextOrder = Math.max(0, ...this.units().map((u) => u.sort_order)) + 1;
+      const { data, error } = await this.db
+        .from('units')
+        .insert({ ...draft, building_id: b.id, sort_order: nextOrder })
+        .select()
+        .single();
+      if (error) throw error;
+      this.units.update((list) => sortUnits([...list, data as Unit]));
+    }
+  }
+
+  async deleteUnit(unit: Unit): Promise<void> {
+    const { error } = await this.db.from('units').delete().eq('id', unit.id);
+    if (error) throw error;
+    this.units.update((list) => list.filter((u) => u.id !== unit.id));
+    this.payments.update((list) => list.filter((p) => p.unit_id !== unit.id));
+  }
+
+  /** Swap with the neighbour above/below. Re-numbers everything so order is always clean. */
+  async moveUnit(unit: Unit, direction: -1 | 1): Promise<void> {
+    const list = [...this.units()];
+    const i = list.findIndex((u) => u.id === unit.id);
+    const j = i + direction;
+    if (i < 0 || j < 0 || j >= list.length) return;
+    [list[i], list[j]] = [list[j], list[i]];
+    const before = this.units();
+    const renumbered = list.map((u, idx) => ({ ...u, sort_order: idx + 1 }));
+    this.units.set(renumbered);
+    const changed = renumbered.filter((u) => before.find((b) => b.id === u.id)?.sort_order !== u.sort_order);
+    const results = await Promise.all(
+      changed.map((u) => this.db.from('units').update({ sort_order: u.sort_order }).eq('id', u.id)),
+    );
+    const failed = results.find((r) => r.error);
+    if (failed?.error) {
+      this.units.set(before);
+      throw failed.error;
+    }
+  }
+
+  // ---------------------------------------------------------------- expenses
+
+  async saveExpense(draft: ExpenseDraft, existing?: Expense, receipt?: Blob | null): Promise<void> {
+    const b = this.requireBuilding();
+    let saved: Expense;
+    if (existing) {
+      const { data, error } = await this.db.from('expenses').update(draft).eq('id', existing.id).select().single();
+      if (error) throw error;
+      saved = data as Expense;
+    } else {
+      const { data, error } = await this.db
+        .from('expenses')
+        .insert({ ...draft, building_id: b.id })
+        .select()
+        .single();
+      if (error) throw error;
+      saved = data as Expense;
+    }
+
+    if (receipt) {
+      const path = `${b.id}/${saved.id}.jpg`;
+      const { error: upErr } = await this.db.storage
+        .from(RECEIPTS_BUCKET)
+        .upload(path, receipt, { upsert: true, contentType: 'image/jpeg', cacheControl: '31536000' });
+      if (upErr) {
+        this.upsertExpenseLocal(saved);
+        throw upErr;
+      }
+      const { data: pub } = this.db.storage.from(RECEIPTS_BUCKET).getPublicUrl(path);
+      const url = `${pub.publicUrl}?v=${Date.now()}`; // cache-bust when a receipt is replaced
+      const { data, error } = await this.db
+        .from('expenses')
+        .update({ receipt_url: url })
+        .eq('id', saved.id)
+        .select()
+        .single();
+      if (error) throw error;
+      saved = data as Expense;
+    }
+    this.upsertExpenseLocal(saved);
+  }
+
+  async removeReceipt(expense: Expense): Promise<void> {
+    const b = this.requireBuilding();
+    await this.db.storage.from(RECEIPTS_BUCKET).remove([`${b.id}/${expense.id}.jpg`]);
+    const { data, error } = await this.db
+      .from('expenses')
+      .update({ receipt_url: null })
+      .eq('id', expense.id)
+      .select()
+      .single();
+    if (error) throw error;
+    this.upsertExpenseLocal(data as Expense);
+  }
+
+  async deleteExpense(expense: Expense): Promise<void> {
+    const b = this.requireBuilding();
+    const { error } = await this.db.from('expenses').delete().eq('id', expense.id);
+    if (error) throw error;
+    if (expense.receipt_url) {
+      await this.db.storage.from(RECEIPTS_BUCKET).remove([`${b.id}/${expense.id}.jpg`]);
+    }
+    this.expenses.update((list) => list.filter((e) => e.id !== expense.id));
+  }
+
+  private upsertExpenseLocal(e: Expense): void {
+    this.expenses.update((list) => sortExpenses([...list.filter((x) => x.id !== e.id), e]));
+  }
+
+  reset(): void {
+    this.buildings.set([]);
+    this.buildingId.set(null);
+    this.units.set([]);
+    this.cycles.set([]);
+    this.payments.set([]);
+    this.expenses.set([]);
+    this.selectedCycleId.set(null);
+  }
+}
