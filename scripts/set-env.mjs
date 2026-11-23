@@ -26,12 +26,19 @@ function loadDotEnv(file) {
 }
 
 const fileVars = { ...loadDotEnv(resolve(root, '.env')), ...loadDotEnv(resolve(root, '.env.local')) };
-const get = (key, fallback = '') => process.env[key] ?? fileVars[key] ?? fallback;
+const get = (key, fallback = '') => process.env[key] || fileVars[key] || fallback;
+
+// Committed, browser-safe defaults (publishable key only). Env vars win over these.
+const publicConfigPath = resolve(root, 'public-config.json');
+const pub = existsSync(publicConfigPath) ? JSON.parse(readFileSync(publicConfigPath, 'utf8')) : {};
+if (String(pub.supabasePublishableKey ?? '').startsWith('sb_secret_')) {
+  throw new Error('public-config.json must never contain a secret key');
+}
 
 const env = {
-  supabaseUrl: get('SUPABASE_URL').replace(/\/+$/, ''),
-  supabaseAnonKey: get('SUPABASE_ANON_KEY'),
-  defaultBuildingSlug: get('DEFAULT_BUILDING_SLUG'),
+  supabaseUrl: get('SUPABASE_URL', pub.supabaseUrl ?? '').replace(/\/+$/, ''),
+  supabaseAnonKey: get('SUPABASE_ANON_KEY', pub.supabasePublishableKey ?? ''),
+  defaultBuildingSlug: get('DEFAULT_BUILDING_SLUG', pub.defaultBuildingSlug ?? ''),
   enablePublicSignup: get('ENABLE_PUBLIC_SIGNUP', 'false').toLowerCase() === 'true',
 };
 

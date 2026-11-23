@@ -84,13 +84,27 @@ public-read, write/delete only inside the owner's `{building_id}/` folder. Seed:
 Core helpers: `core/format.ts` (Arabic months, money, status/category meta, `deriveStatus`), `core/messages.ts`
 (WhatsApp reminder + monthly report), `core/csv.ts`, `core/toast.service.ts` (`arabicError` maps errors to friendly Arabic).
 
-## 6. Configuration
+## 6. Live environment
 
-Env vars (→ `scripts/set-env.mjs` → generated, git-ignored `src/environments/environment.ts`):
-`SUPABASE_URL`, `SUPABASE_ANON_KEY`, optional `DEFAULT_BUILDING_SLUG`, optional `ENABLE_PUBLIC_SIGNUP` (default `false`).
+| Item | Value |
+| --- | --- |
+| GitHub | `github.com/samiralholo/building-committee-app` — **public** (GitHub blocks private repos for this account's region); Claude GitHub App installed on this repo only |
+| Supabase | org `tracker` (Free), project **building-committee** (Europe), ref `slqjhpvwsctwvajpnorq`, URL `https://slqjhpvwsctwvajpnorq.supabase.co`; owner signs in with GitHub |
+| Supabase state | migration 001 + seed applied; Auth "Allow new users to sign up" = **off**; 1 admin user (created by Samir); pilot building `al-yasmin-14` |
+| Keys | publishable key committed in `public-config.json` (browser-safe by design). Secret keys and the DB password live only in the Supabase dashboard; never commit them |
+| Vercel | not deployed yet |
+
+Live checks (2026-11-24): public RPC returns the building with no phone fields; anon `select` on `units` → 401; `keepalive_ping` → 200; `/auth/v1/signup` → 422 `signup_disabled`.
+
+## 7. Configuration
+
+`scripts/set-env.mjs` → generated, git-ignored `src/environments/environment.ts`. Priority: env vars →
+`.env` / `.env.local` → committed `public-config.json` (URL, publishable key, default slug).
+Env vars: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, optional `DEFAULT_BUILDING_SLUG`, optional `ENABLE_PUBLIC_SIGNUP` (default `false`).
+The keep-alive workflow uses repo secrets if set, otherwise `public-config.json` (sends only the `apikey` header).
 Pilot mode = Supabase "Allow new users to sign up" **off** + `ENABLE_PUBLIC_SIGNUP=false`.
 
-## 7. Decisions & rationale
+## 8. Decisions & rationale
 
 - **Digits:** Arabic text with Latin digits (`ar-SY-u-nu-latn`): clearer for numbers on phones, matches common usage.
 - **Month names:** Levantine (كانون الثاني … كانون الأول), matching the spec example "تشرين الثاني 2026".
@@ -103,9 +117,11 @@ Pilot mode = Supabase "Allow new users to sign up" **off** + `ENABLE_PUBLIC_SIGN
 - **Fonts:** Google Fonts link (not build-time inlined: inlining fails without network and adds build fragility);
   the service worker caches the font files.
 - **Delete confirmations:** in-app two-step buttons (no browser `confirm()` dialogs).
+- **Public config committed:** the Supabase URL + publishable key sit in `public-config.json`, so Vercel and the
+  GitHub cron need no secrets. Rotating the key = edit that file (or override with env vars).
 - **Phone format:** stored as international digits without `+` (e.g. `963933111001`); `09…` local numbers become `963…`.
 
-## 8. Verification done
+## 9. Verification done
 
 - SQL migration + seed applied twice (idempotent) on PGlite with Supabase `auth`/`storage` stubs; verified: anon cannot read
   `units`; RPC has no phone fields; other users see 0 rows and cannot create cycles or upload; owner can; 1-click cycle makes
@@ -114,15 +130,16 @@ Pilot mode = Supabase "Allow new users to sign up" **off** + `ENABLE_PUBLIC_SIGN
 - Headless Chrome run against a mock Supabase (PGlite + real SQL): public page, drawer, tabs, login, dashboard,
   1-tap paid (optimistic), create cycle, units, expenses form, settings/QR — no console errors.
 
-## 9. Backlog / ideas (not built yet)
+## 10. Backlog / ideas (not built yet)
 
 - Per-building dynamic manifest `start_url` (today: landing redirects to the last visited building).
 - Multiple admins per building (`building_members` table) when going SaaS.
 - Payment receipts for residents / monthly PDF report.
 - Supabase CLI config (`supabase/config.toml`) for local dev.
 
-## 10. Change log
+## 11. Change log
 
 | Date | Change |
 | --- | --- |
-| 2026-11-24 | v0.1 — Initial build: schema/RLS/RPCs/storage/seed, public resident view, admin portal, PWA, Vercel config, keep-alive workflow, README, this context file. Repo created at `github.com/samiralholo/building-committee-app` (private). |
+| 2026-11-24 | v0.1 — Initial build: schema/RLS/RPCs/storage/seed, public resident view, admin portal, PWA, Vercel config, keep-alive workflow, README, this context file. Repo created at `github.com/samiralholo/building-committee-app`. |
+| 2026-11-24 | Repo made **public** and pushed. Supabase project `building-committee` created (GitHub sign-in), migration + seed applied, public signups disabled, admin user created. Added `public-config.json` (URL + publishable key + default slug) as build/cron fallback; keep-alive sends `apikey` header only. |

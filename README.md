@@ -9,6 +9,9 @@ The volunteer admin records a payment with **1 tap** and opens a new month for a
 Supabase (Postgres + RLS + Auth + Storage) · Vercel · GitHub Actions keep-alive.
 
 > Project decisions, conventions and change log live in [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md).
+>
+> **Pilot status:** the Supabase project is already set up and linked through [`public-config.json`](public-config.json)
+> (URL + browser-safe publishable key). Steps 1–2 and 5 below are only needed for a fresh project.
 
 ---
 
@@ -21,7 +24,7 @@ Supabase (Postgres + RLS + Auth + Storage) · Vercel · GitHub Actions keep-aliv
    disable **“Allow new users to sign up”**. Only accounts you create by hand can log in.
 4. Copy your keys from **Project Settings → API** (or the **Connect** button):
    - **Project URL** → `SUPABASE_URL`
-   - **anon / publishable key** → `SUPABASE_ANON_KEY`
+   - **publishable key** (`sb_publishable_…`, or the legacy anon key) → `SUPABASE_ANON_KEY`, or put it in `public-config.json`
      (this key is meant to be public; the data is protected by RLS. **Never** use the `service_role` / secret key in the app.)
 
 ## 2. Create the first admin and link the building
@@ -53,8 +56,8 @@ environment variables (Vercel). That generated file is git-ignored.
 
 1. <https://vercel.com/new> → **Import** this GitHub repository.
 2. Leave the framework preset as is — `vercel.json` already sets the install/build commands, the output folder, and the SPA fallback rewrite.
-3. **Environment Variables** → add `SUPABASE_URL`, `SUPABASE_ANON_KEY` and, optionally,
-   `DEFAULT_BUILDING_SLUG=al-yasmin-14` (the home page then opens your building directly).
+3. Environment variables are optional: `public-config.json` already holds the URL, publishable key and
+   `defaultBuildingSlug`. Set `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `DEFAULT_BUILDING_SLUG` only to override them.
 4. **Deploy**. Your resident link is `https://<your-app>.vercel.app/b/<slug>`.
 5. In the app: **الإعدادات → طباعة ورقة المصعد** prints a QR poster for the elevator.
 
@@ -63,6 +66,7 @@ environment variables (Vercel). That generated file is git-ignored.
 Free Supabase projects pause after 7 days without traffic. `.github/workflows/supabase-keepalive.yml`
 pings the database every 4 days (a read-only `keepalive_ping()` call).
 
+It works out of the box with `public-config.json`. To use a different project without editing that file, add
 GitHub repo → **Settings → Secrets and variables → Actions → New repository secret**:
 
 | Name | Value |
