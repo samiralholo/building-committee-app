@@ -4,6 +4,7 @@ A free, Arabic-first (RTL) PWA that replaces **the paper collection sheet in the
 Residents open one public link (or scan the QR code in the elevator) and see who paid, where the money went
 (with receipt photos) and the emergency numbers — no accounts, no passwords. Each building's volunteer admin
 records a payment with **1 tap**; a **Super Admin** creates buildings and assigns their admins.
+Building admins log in with their **WhatsApp / mobile number + password** — no paid SMS/OTP, 100% free tier.
 
 > **Live:** https://building-committee-app.vercel.app · admin & super admin: [`/admin/login`](https://building-committee-app.vercel.app/admin/login)
 >
@@ -19,8 +20,8 @@ Supabase (Postgres + RLS + Auth + Storage) · Vercel (static app + 3 serverless 
 | Role | Where | Can do |
 | --- | --- | --- |
 | Resident | `/b/:slug` (no login) | Read the building's public page (no phone numbers, names hidden if the admin wants) |
-| Building admin | `/admin` | Full control of **their assigned building(s)** only: payments, months, expenses, units, settings |
-| Super admin | `/superadmin` | Create/edit/disable/delete buildings, assign/remove admins, reset admin passwords, **read-only** inspection of any building |
+| Building admin | `/admin` (login: **mobile number** + password) | Full control of **their assigned building(s)** only: payments, months, expenses, units, settings |
+| Super admin | `/superadmin` (login: email + password) | Create/edit/disable/delete buildings, assign/remove admins, edit admin phones, reset admin passwords, set the support WhatsApp, **read-only** inspection of any building |
 
 A super admin can also be assigned to a building as its admin (then `/admin` manages that building).
 
@@ -33,6 +34,7 @@ A super admin can also be assigned to a building as its admin (then `/admin` man
 2. **SQL Editor** → run, in order:
    1. [`supabase/migrations/001_initial_schema.sql`](supabase/migrations/001_initial_schema.sql)
    2. [`supabase/migrations/002_superadmin_and_roles.sql`](supabase/migrations/002_superadmin_and_roles.sql)
+   3. [`supabase/migrations/003_phone_auth_admins.sql`](supabase/migrations/003_phone_auth_admins.sql)
 3. **Authentication → Sign In / Providers** → turn **off** “Allow new users to sign up”.
 4. **Authentication → Users → Add user → Create new user** (your email + password, “Auto Confirm User”).
 5. **Promote yourself to Super Admin** — SQL Editor, one command:
@@ -41,7 +43,7 @@ A super admin can also be assigned to a building as its admin (then `/admin` man
    ```
 6. Optional sample data: run [`supabase/seed.sql`](supabase/seed.sql) (building `al-yasmin-14`, assigned to the oldest user).
 
-> Upgrading an existing v0.1 project? Run only `002_superadmin_and_roles.sql` (idempotent) and step 5.
+> Upgrading? Run only the migrations you haven't run yet (all are idempotent). From v0.1: 002 + 003 + step 5. From v0.2: 003.
 > Existing building owners are migrated automatically into `building_admins`.
 
 ### 2. Vercel
@@ -73,6 +75,29 @@ Redeploy after adding variables.
 
 ---
 
+## Phone login for building admins (free, no SMS)
+
+Supabase Auth needs an email, so every building admin gets a **hidden synthetic login email**
+`<normalized_phone>@phone.lajna.app`. It is created and changed only by the server API and is **never shown**
+anywhere (UI, WhatsApp messages, API responses). People only ever see and type the phone number.
+
+- **One login field** «رقم الموبايل أو البريد الإلكتروني»: anything with `@` is used as an email (super admin, legacy
+  accounts); anything else is normalized as a phone and mapped to its synthetic email (`resolveLoginIdentifier`).
+- **Normalization** (`src/app/core/phone-auth.ts`, shared by the app, the `/api` functions and the tests; mirrored in SQL by
+  `public.normalize_phone_digits` with identical results):
+  1. Eastern Arabic `٠-٩` and Persian `۰-۹` digits → `0-9`
+  2. remove spaces, NBSP, dashes (incl. Unicode), `(` `)` `.` `/` and invisible bidi marks `U+200E/F`, `U+202A–E`, `U+2066–9`, BOM
+  3. strip a leading `+` or `00` (and a trunk `0` typed after `+963`); otherwise local `0…` (9–11 digits) → `963…`, and 9 digits starting with `9` → `963…`
+  4. result must match `^[1-9]\d{9,14}$`, else «يرجى إدخال رقم موبايل صحيح (مثال: 0912345678)»
+  
+  `0912345678`, `٠٩١٢٣٤٥٦٧٨`, `+963 912-345-678`, `00963912345678`, `912345678` → `963912345678`; `+971501234567` → `971501234567`.
+- One account per phone: unique index `profiles_phone_unique_idx`.
+- **Forgot password:** «نسيت كلمة المرور؟» on `/admin/login` opens WhatsApp to the **support number** set by the super admin
+  (`/superadmin` → «واتساب الدعم»; stored in `platform_settings`, exposed only through `get_support_whatsapp()`).
+  The super admin then sets a new password from «تعيين / إدارة المشرف» and sends it back with «إرسال عبر واتساب».
+
+---
+
 ## Local development
 
 ```bash
@@ -81,6 +106,7 @@ cp .env.example .env          # optional: point at another Supabase project
 pnpm start                    # http://localhost:4200
 pnpm build                    # production build → dist/building-committee-app/browser
 pnpm typecheck                # strict TS for the app AND the /api functions
+pnpm test:unit                # phone normalization + login identifier tests (node:test)
 pnpm verify:security [slug]   # secret-key scan + live anon checks (units/profiles blocked, no whatsapp_phone)
 ```
 
@@ -95,9 +121,10 @@ All endpoints verify the caller's Supabase JWT (`Authorization: Bearer …`) and
 
 | Method & path | Body | Does |
 | --- | --- | --- |
-| `POST /api/superadmin/create-building-admin` | `{ building_id, full_name, email, phone?, password }` | Creates the user (email pre-confirmed) or links an existing one, then assigns it to the building |
-| `DELETE /api/superadmin/remove-building-admin` | `{ building_id, user_id }` | Unassigns (the account stays) |
-| `POST /api/superadmin/reset-admin-password` | `{ user_id, password }` | New password for a building admin |
+| `POST /api/superadmin/create-building-admin` | `{ building_id, full_name, phone, password }` | Normalizes the phone (400 if invalid), creates the phone-login user or links the existing one (never downgrades a superadmin), assigns it. Returns `{ user_id, full_name, phone, already_existed }` |
+| `POST /api/superadmin/update-admin-phone` | `{ user_id, new_phone }` | Changes the login phone (auth email + profile, rolled back on failure). 403 for superadmins, 409 «هذا الرقم مستخدم بالفعل لمشرف آخر» |
+| `DELETE /api/superadmin/remove-building-admin` | `{ building_id, user_id }` | Unassigns (the account stays); returns the phone |
+| `POST /api/superadmin/reset-admin-password` | `{ user_id, password }` | New password for a building admin; returns the phone |
 
 ---
 
@@ -130,7 +157,8 @@ The last building visited is remembered, so the home-screen icon opens it direct
 
 ```
 api/                        Vercel functions (server-only, service key)
-supabase/migrations/        001 schema · 002 roles, redirects, landing RPC
+supabase/migrations/        001 schema · 002 roles, redirects, landing RPC · 003 phone login, platform_settings
+tests/                      unit tests (node --test, TypeScript via type stripping)
 supabase/seed.sql           pilot sample data
 src/app/core/               config, fetch-based public API, auth/access, guards, formatting, WhatsApp/CSV/QR helpers
 src/app/shared/             icons, badges, sheet, lightbox, install & update banners, change password

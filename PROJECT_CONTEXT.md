@@ -4,7 +4,7 @@
 > **Update it with every change** (add a change-log row and adjust any section that changed). Mirrored to the
 > claude.ai Project "Construction Committee" so every new session starts from the same picture.
 
-_Last updated: 2026-11-24 (v0.2) · Owner: Samir (GitHub `samiralholo`)_
+_Last updated: 2026-11-24 (v0.3) · Owner: Samir (GitHub `samiralholo`)_
 
 ---
 
@@ -18,7 +18,7 @@ assigns a volunteer **building admin** to each.
 
 - **Residents:** everyday neighbors, some elderly or with limited literacy. They **never** create accounts or log in.
   One public read-only link per building: `/b/:slug` (installable on the home screen, opened via an elevator QR code).
-- **Building admin:** a volunteer. **1 tap** to record a full payment. **1 click** to create a new month for all occupied units.
+- **Building admin:** a volunteer. Logs in with **mobile number + password** (no email). **1 tap** to record a full payment. **1 click** to create a new month for all occupied units.
 - **Super admin (Samir):** manages buildings and their admins; inspects any building read-only.
 - 100% Arabic, `lang="ar" dir="rtl"`, simple everyday Levantine words:
   صندوق البناء · المطلوب هالشهر · الباقي عليك · خالص · غير مدفوع · دفع جزء · مصاريف الشهر · أرقام الطوارئ.
@@ -78,7 +78,15 @@ digits, amounts ≥ 0, categories), composite FKs so a payment/expense can't cro
   `get_my_access()` → `{user_id, role, full_name, buildings[]}`, `superadmin_overview()` → KPIs + buildings with admins,
   unit count, fund balance (superadmin only).
 
-Tested in PGlite with Supabase stubs: **42 checks** (upgrade path 001 → old seed → 002 twice, every role, storage, renames).
+### Migration 003 (`supabase/migrations/003_phone_auth_admins.sql`, idempotent)
+- `normalize_phone_digits(text, cc='963')` (immutable SQL twin of the TS rules; same results on the shared test vectors).
+- Existing `profiles.phone` normalized; duplicates cleared on newer accounts; partial unique index `profiles_phone_unique_idx`.
+- `handle_new_user()` stores the normalized metadata phone.
+- `platform_settings (key PK, value, updated_at)`: RLS superadmin-only, anon revoked; `get_support_whatsapp()` (anon) returns
+  only `support_whatsapp_phone`.
+- `get_my_access()` also returns `phone`.
+
+Tested in PGlite with Supabase stubs: **42 checks** (002) + **65 checks** (003: SQL/TS parity, cleanup, unique index, RLS on 9 tables, settings roles) (upgrade path 001 → old seed → 002 twice, every role, storage, renames).
 
 ## 5. App map
 
@@ -86,13 +94,15 @@ Tested in PGlite with Supabase stubs: **42 checks** (upgrade path 001 → old se
 | --- | --- | --- | --- |
 | `/` | `features/landing/landing.ts` | — | remembered slug (`last_visited_building_slug`, validated via landing RPC) → single active building → code form |
 | `/b/:slug` | `features/public/public-building.{ts,html}` | — | fetch RPC, network-first (saved copy only offline), canonical-slug redirect, install banner, zoomable lightbox |
-| `/admin/login` | `features/admin/login.ts` | `guestGuard` | role-aware redirect: superadmin → `/superadmin`, admin → `/admin` |
+| `/admin/login` | `features/admin/login.ts` | `guestGuard` | one field «رقم الموبايل أو البريد الإلكتروني» → `resolveLoginIdentifier`; role-aware redirect; «نسيت كلمة المرور؟» → support WhatsApp |
 | `/admin/**` | `features/admin/*` (`admin.routes.ts`) | `buildingAdminGuard` | `AdminStore` loads **assigned** buildings only (switcher if >1); "not assigned" screen otherwise |
-| `/superadmin` | `features/superadmin/overview.ts`, `manage-building.ts` | `superAdminGuard` | KPIs, search, create building (auto slug), assign/remove admins, reset password, credentials → WhatsApp, edit/disable/delete |
+| `/superadmin` | `features/superadmin/overview.ts`, `manage-building.ts` | `superAdminGuard` | KPIs, search, support-WhatsApp card, create building (auto slug), add admin (name + phone + password), «تعديل الرقم», reset password, credentials → copy / «إرسال عبر واتساب», edit/disable/delete |
 | `/superadmin/buildings/:id` | `features/superadmin/inspect-building.ts` | `superAdminGuard` | `AdminStore.loadSingle` read-only; banner «وضع المعاينة (سوبر أدمن - للقراءة فقط)»; zero mutation buttons |
-| `/api/superadmin/*` | `api/superadmin/*.ts`, `api/_lib/admin.ts` | JWT + `profiles.role` | create-building-admin (POST), remove-building-admin (DELETE), reset-admin-password (POST) |
+| `/api/superadmin/*` | `api/superadmin/*.ts`, `api/_lib/admin.ts` | JWT + `profiles.role` | create-building-admin (POST, phone), update-admin-phone (POST), remove-building-admin (DELETE), reset-admin-password (POST) |
 
-Core: `core/public-api.ts` (fetch RPC, remembered slug), `core/access.service.ts`, `core/auth.guard.ts`,
+Core: `core/phone-auth.ts` (**shared** by app, `/api` and tests: `normalizePhone`, `resolveLoginIdentifier`,
+`phoneToAuthEmail`, `isSyntheticPhoneEmail`, `displayableEmail`, `formatPhoneForDisplay`, `formatPhoneForMessage`),
+`core/phone.ts` (app wrappers: `phoneDigits`, `tidyPhoneInput`, `isValidPhone`, `waHref`, `telHref`, `prettyPhone`), `core/public-api.ts` (fetch RPC, remembered slug, `getSupportWhatsapp`), `core/access.service.ts`, `core/auth.guard.ts`,
 `core/qr-poster.ts`, `core/password.ts`, `core/messages.ts` (reminder, monthly report, admin credentials),
 `core/install.service.ts`. Shared: `lightbox`, `install-banner`, `update-banner`, `change-password`, `sheet`, `status-badge`, `icon`.
 
@@ -102,7 +112,7 @@ Core: `core/public-api.ts` (fetch RPC, remembered slug), `core/access.service.ts
 | --- | --- |
 | GitHub | `github.com/samiralholo/building-committee-app`, **public** (GitHub blocks private repos for this account's region); Claude GitHub App installed on this repo only |
 | Supabase | org `tracker` (Free), project **building-committee** (Europe), ref `slqjhpvwsctwvajpnorq`; owner signs in with GitHub |
-| Supabase state | 001 + seed + **002 applied (2026-11-24)**; signups **off**; `samir.alholo.98@gmail.com` = **superadmin** and admin of `al-yasmin-14` |
+| Supabase state | 001 + seed + **002** + **003 applied (2026-11-24)**; signups **off**; `samir.alholo.98@gmail.com` = **superadmin** and admin of `al-yasmin-14` |
 | Vercel | team `samir-alholos-projects` (Hobby), project `building-committee-app`, auto-deploys from `main`. **https://building-committee-app.vercel.app** |
 | Vercel env | **Set 2026-11-24** (Production): `SUPABASE_URL` (config) + `SUPABASE_SERVICE_ROLE_KEY` (secret, pasted by Samir, never seen by an assistant) |
 | Keys | publishable key in `public-config.json`. Secret key only in the Supabase dashboard + Vercel env |
@@ -140,7 +150,12 @@ Signals + `computed()` everywhere, `@for` tracked by id. Fixed a real bug: an `e
 - **Network-first resident data**; the localStorage copy is only an offline fallback. The SW never caches Supabase or `/api`.
 - **Receipts** always JPEG, max 1200px, q 0.72 stepped down to < 150 KB; URL gets `?v=timestamp`.
 - **Delete confirmations** are in-app (no browser `confirm()`).
-- **Phone format:** international digits without `+` (`09…` → `963…`). WhatsApp links only for valid numbers.
+- **Phone format:** international digits without `+` (`09…` → `963…`), one shared module for app/API/tests. WhatsApp links only for valid numbers.
+- **Phone login = Synthetic Email Pattern** (`<digits>@phone.lajna.app`): free (no SMS/OTP provider), works with stock
+  Supabase password auth. The synthetic address is never rendered (`displayableEmail`) nor returned by the API to people.
+- **Forgot password = WhatsApp to the platform admin** (free), who resets it from `/superadmin`.
+- **Phones inside Arabic messages** use one unbroken token (`0912345678`, or LRM + `+971…`): spaced groups get reordered
+  by the bidi algorithm in RTL text («678 345 912 963+»).
 - **Public config committed:** URL + publishable key in `public-config.json` (browser-safe by design).
 
 ## 10. Verification done (v0.2)
@@ -152,9 +167,19 @@ Signals + `computed()` everywhere, `@for` tracked by id. Fixed a real bug: an `e
   slug), resident page, iOS install guide, superadmin overview/create/manage/inspect, admin login + 1-tap paid, admin blocked
   from `/superadmin`, slug rename → old link redirects. 0 overflow, 0 targets < 48px, 0 console errors.
 
+### v0.3 verification
+- `pnpm test:unit`: 13 suites (Eastern Arabic/Persian digits, separators, `00`/`+`, local `09…`, 9-digit, bidi marks,
+  other countries, invalid inputs, email passthrough, synthetic helpers, display/message formats).
+- Local end-to-end against a mock Supabase running migrations 001–003 **and the real bundled `/api` handlers**:
+  superadmin email login; support number saved from `٠٩٣٣…`; admin created by phone (no email field), message has phone +
+  password and no synthetic email, «إرسال عبر واتساب» → `wa.me/963…`; same phone re-linked (no 2nd account); admin login
+  with `0912345678` and `٠٩١٢٣٤٥٦٧٨`; change password (old rejected with Arabic error); duplicate phone edit → 409; phone
+  edit → old number rejected, new works; reset → message with phone; removal. `phone.lajna.app` found in 0 rendered pages.
+- Bundle unchanged (main 76.5 KB gz).
+
 ## 11. Backlog / ideas
 
-- Self-service "forgot password" email flow (needs Supabase SMTP / redirect URL).
+- Self-service password reset without the platform admin would need an OTP provider (not free) — intentionally skipped.
 - Clean up orphaned receipt files when a whole building is deleted.
 - Audit log of admin actions; monthly PDF report; Supabase CLI config for local dev.
 
@@ -167,3 +192,4 @@ Signals + `computed()` everywhere, `@for` tracked by id. Fixed a real bug: an `e
 | 2026-11-24 | Deployed to Vercel (Git-connected). Verified live: resident page with real data, admin guard, service worker active. |
 | 2026-11-24 | **v0.2**: migration 002 (profiles, building_admins, slug redirects, is_active, landing RPC, RLS rewrite) applied live; Samir promoted to superadmin. Super Admin portal + read-only inspect; `/api/superadmin/*` provisioning functions; role-aware login/guards; dynamic `/` (no hard-coded slug); perf split (−40% initial JS, no supabase-js for residents); safe SW caching, update banner, install banner + iOS guide; zoomable lightbox; UX fixes (`UI_UX_AUDIT.md`); `verify-security` script; keep-alive → `get_public_landing_state` at `0 6 */4 * *`. |
 | 2026-11-24 | Production verified as anon: 401 on units/profiles/building_admins/payments/buildings/slug_redirects and on `superadmin_overview`; dashboard has 0 `whatsapp_phone` and no payment notes; `/api/superadmin/*` deployed (401 without token). Vercel env vars set; redeploy to activate them. |
+| 2026-11-24 | **v0.3 — phone login for building admins**: shared `phone-auth.ts` (+13 unit tests), migration 003 (normalized unique phones, `platform_settings`, `get_support_whatsapp`, `get_my_access.phone`) applied live; API create-by-phone + `update-admin-phone`; smart login field; «نسيت كلمة المرور؟» via support WhatsApp; super admin phone UI, «تعديل الرقم», «إرسال عبر واتساب»; synthetic emails never displayed. |
