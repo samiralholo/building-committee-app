@@ -6,7 +6,7 @@ import { copyText, publicBuildingUrl } from '../../core/messages';
 import { makeQrDataUrl, printElevatorPoster } from '../../core/qr-poster';
 import { ChangePassword } from '../../shared/change-password';
 import { EmergencyContact } from '../../core/models';
-import { isValidPhone, normalizePhone } from '../../core/phone';
+import { isValidPhone, phoneDigits, tidyPhoneInput } from '../../core/phone';
 import { ToastService, arabicError } from '../../core/toast.service';
 import { Icon } from '../../shared/icon';
 import { AdminStore } from './admin-store';
@@ -171,7 +171,7 @@ export class Settings {
   private readonly toast = inject(ToastService);
 
   protected readonly slugify = slugify;
-  protected readonly normalize = normalizePhone;
+  protected readonly normalize = tidyPhoneInput;
   protected readonly roles = ROLE_SUGGESTIONS;
 
   protected readonly saving = signal(false);
@@ -245,7 +245,7 @@ export class Settings {
       return;
     }
     const contacts = this.contacts()
-      .map((c) => ({ name: c.name.trim(), role: c.role.trim(), phone: normalizePhone(c.phone) }))
+      .map((c) => ({ name: c.name.trim(), role: c.role.trim(), phone: phoneDigits(c.phone) || c.phone.trim() }))
       .filter((c) => c.name || c.phone);
     const bad = contacts.find((c) => !isValidPhone(c.phone));
     if (bad) {

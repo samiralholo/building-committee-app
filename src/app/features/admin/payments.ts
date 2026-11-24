@@ -4,7 +4,7 @@ import { RouterLink } from '@angular/router';
 import { formatDate, formatMoney, formatNumber } from '../../core/format';
 import { whatsappReminder } from '../../core/messages';
 import { Payment, PaymentStatus, Unit } from '../../core/models';
-import { isValidPhone, normalizePhone, waHref } from '../../core/phone';
+import { isValidPhone, waHref } from '../../core/phone';
 import { ToastService, arabicError } from '../../core/toast.service';
 import { Icon } from '../../shared/icon';
 import { Sheet } from '../../shared/sheet';
@@ -270,7 +270,7 @@ export class Payments {
 
   /** Only offer WhatsApp when the stored number normalizes to valid international digits. */
   protected hasWhatsapp(u: Unit): boolean {
-    return isValidPhone(normalizePhone(u.whatsapp_phone));
+    return isValidPhone(u.whatsapp_phone);
   }
 
   protected reminderHref(r: Row): string {

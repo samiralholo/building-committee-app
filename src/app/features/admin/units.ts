@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Unit } from '../../core/models';
-import { isValidPhone, normalizePhone, prettyPhone } from '../../core/phone';
+import { isValidPhone, phoneDigits, prettyPhone, tidyPhoneInput } from '../../core/phone';
 import { ToastService, arabicError } from '../../core/toast.service';
 import { Icon } from '../../shared/icon';
 import { Sheet } from '../../shared/sheet';
@@ -96,7 +96,7 @@ import { AdminStore } from './admin-store';
               (blur)="phone = normalize(phone)"
             />
             <p class="mt-1 text-sm text-ink-soft">
-              @if (phone && valid(normalize(phone))) {
+              @if (phone && valid(phone)) {
                 ✓ <span dir="ltr" class="num">{{ pretty(phone) }}</span>
               } @else if (phone) {
                 <span class="text-unpaid">الرقم ناقص — اكتبه مع رمز الدولة أو بصيغة 09…</span>
@@ -142,7 +142,7 @@ export class Units {
   protected readonly store = inject(AdminStore);
   private readonly toast = inject(ToastService);
 
-  protected readonly normalize = normalizePhone;
+  protected readonly normalize = tidyPhoneInput;
   protected readonly valid = isValidPhone;
   protected readonly pretty = prettyPhone;
 
@@ -182,8 +182,8 @@ export class Units {
   }
 
   protected async save(): Promise<void> {
-    const phone = normalizePhone(this.phone);
-    if (phone && !isValidPhone(phone)) {
+    const phone = phoneDigits(this.phone);
+    if (this.phone.trim() && !phone) {
       this.toast.error('رقم الواتساب غير صحيح');
       return;
     }
