@@ -1,114 +1,139 @@
 # لجنة البناء — Building Committee App
 
 A free, Arabic-first (RTL) PWA that replaces **the paper collection sheet in the building elevator**.
-Residents open one public link (or scan a QR code in the elevator) and see, at a glance, who paid,
-where the money went (with receipt photos) and the emergency numbers. No accounts, no passwords.
-The volunteer admin records a payment with **1 tap** and opens a new month for all apartments with **1 click**.
+Residents open one public link (or scan the QR code in the elevator) and see who paid, where the money went
+(with receipt photos) and the emergency numbers — no accounts, no passwords. Each building's volunteer admin
+records a payment with **1 tap**; a **Super Admin** creates buildings and assigns their admins.
 
-**Stack (all free tier):** Angular 22 (standalone, zoneless, Signals, strict) · Tailwind CSS 4 · Angular PWA ·
-Supabase (Postgres + RLS + Auth + Storage) · Vercel · GitHub Actions keep-alive.
+> **Live:** https://building-committee-app.vercel.app · admin & super admin: [`/admin/login`](https://building-committee-app.vercel.app/admin/login)
+>
+> Decisions, conventions and change log: [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) · UX audit: [`UI_UX_AUDIT.md`](UI_UX_AUDIT.md)
 
-> Project decisions, conventions and change log live in [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md).
->
-> **Live:** https://building-committee-app.vercel.app — residents: [`/b/al-yasmin-14`](https://building-committee-app.vercel.app/b/al-yasmin-14) · admin: [`/admin/login`](https://building-committee-app.vercel.app/admin/login)
->
-> **Pilot status:** the Supabase project is already set up and linked through [`public-config.json`](public-config.json)
-> (URL + browser-safe publishable key). Steps 1–2 and 5 below are only needed for a fresh project.
+**Stack (all free tier):** Angular 22 (standalone, zoneless, Signals, strict) · Tailwind CSS 4 · Angular service worker ·
+Supabase (Postgres + RLS + Auth + Storage) · Vercel (static app + 3 serverless functions) · GitHub Actions keep-alive.
 
 ---
 
-## 1. Create the free Supabase project (≈5 min)
+## Roles
 
-1. Go to <https://supabase.com> → **New project** (Free plan). Pick a region close to your building.
-2. Open **SQL Editor** → **New query** → paste all of [`supabase/migrations/001_initial_schema.sql`](supabase/migrations/001_initial_schema.sql) → **Run**.
-   This creates the 5 tables, Row Level Security, the public read-only function, and the `receipts` storage bucket.
-3. **Turn off public signups** (pilot mode): **Authentication → Sign In / Providers → Email** →
-   disable **“Allow new users to sign up”**. Only accounts you create by hand can log in.
-4. Copy your keys from **Project Settings → API** (or the **Connect** button):
-   - **Project URL** → `SUPABASE_URL`
-   - **publishable key** (`sb_publishable_…`, or the legacy anon key) → `SUPABASE_ANON_KEY`, or put it in `public-config.json`
-     (this key is meant to be public; the data is protected by RLS. **Never** use the `service_role` / secret key in the app.)
+| Role | Where | Can do |
+| --- | --- | --- |
+| Resident | `/b/:slug` (no login) | Read the building's public page (no phone numbers, names hidden if the admin wants) |
+| Building admin | `/admin` | Full control of **their assigned building(s)** only: payments, months, expenses, units, settings |
+| Super admin | `/superadmin` | Create/edit/disable/delete buildings, assign/remove admins, reset admin passwords, **read-only** inspection of any building |
 
-## 2. Create the first admin and link the building
+A super admin can also be assigned to a building as its admin (then `/admin` manages that building).
 
-1. **Authentication → Users → Add user → Create new user** — enter your email + a password, tick **Auto Confirm User**.
-2. Optional sample data: **SQL Editor** → paste [`supabase/seed.sql`](supabase/seed.sql) → **Run**.
-   It creates the pilot building `al-yasmin-14` (8 apartments, 2 months, 3 expenses) owned by the **first user** you created.
-3. Want a different owner later? Run:
+---
+
+## Setup from scratch
+
+### 1. Supabase (free project)
+1. <https://supabase.com> → **New project**.
+2. **SQL Editor** → run, in order:
+   1. [`supabase/migrations/001_initial_schema.sql`](supabase/migrations/001_initial_schema.sql)
+   2. [`supabase/migrations/002_superadmin_and_roles.sql`](supabase/migrations/002_superadmin_and_roles.sql)
+3. **Authentication → Sign In / Providers** → turn **off** “Allow new users to sign up”.
+4. **Authentication → Users → Add user → Create new user** (your email + password, “Auto Confirm User”).
+5. **Promote yourself to Super Admin** — SQL Editor, one command:
    ```sql
-   update public.buildings
-   set owner_id = (select id from auth.users where email = 'you@example.com')
-   where slug = 'al-yasmin-14';
+   update public.profiles set role = 'superadmin' where email = 'you@example.com';
    ```
-   No seed? Just log in at `/admin/login` — the app shows a short **“create your building”** form.
+6. Optional sample data: run [`supabase/seed.sql`](supabase/seed.sql) (building `al-yasmin-14`, assigned to the oldest user).
 
-## 3. Run locally
+> Upgrading an existing v0.1 project? Run only `002_superadmin_and_roles.sql` (idempotent) and step 5.
+> Existing building owners are migrated automatically into `building_admins`.
+
+### 2. Vercel
+Import the GitHub repo — `vercel.json` already sets pnpm, the output folder, the SPA rewrite (excluding `/api/*`) and the functions.
+
+**Project → Settings → Environment Variables** (Production):
+
+| Name | Value | Used by |
+| --- | --- | --- |
+| `SUPABASE_URL` | `https://<ref>.supabase.co` | build + `/api` functions |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase **secret** key (`sb_secret_…`) or legacy `service_role` key | **`/api` functions only** (creating admin accounts) |
+
+The browser key (URL + publishable/anon key) is read from [`public-config.json`](public-config.json); `SUPABASE_ANON_KEY`
+can override it. The build **refuses** to bundle a secret/service_role key, and `pnpm verify:security` scans `src/` and `dist/`.
+Redeploy after adding variables.
+
+### 3. GitHub Actions keep-alive (free projects pause after 7 days idle)
+`.github/workflows/supabase-keepalive.yml` runs every 4 days (`0 6 */4 * *`) and on demand. It POSTs to
+`rpc/get_public_landing_state` and **fails loudly** on any non-200.
+
+**Repo → Settings → Secrets and variables → Actions → New repository secret** — exactly these 2:
+
+| Secret | Value |
+| --- | --- |
+| `SUPABASE_URL` | `https://<ref>.supabase.co` |
+| `SUPABASE_ANON_KEY` | the publishable/anon key (never the secret key) |
+
+(If the secrets are missing, the job falls back to `public-config.json`.) Then **Actions → Supabase keep-alive → Run workflow** once.
+
+---
+
+## Local development
 
 ```bash
 pnpm install
-cp .env.example .env      # then fill SUPABASE_URL and SUPABASE_ANON_KEY
-pnpm start                # http://localhost:4200  →  /b/al-yasmin-14  and  /admin/login
-pnpm build                # production build in dist/building-committee-app/browser
+cp .env.example .env          # optional: point at another Supabase project
+pnpm start                    # http://localhost:4200
+pnpm build                    # production build → dist/building-committee-app/browser
+pnpm typecheck                # strict TS for the app AND the /api functions
+pnpm verify:security [slug]   # secret-key scan + live anon checks (units/profiles blocked, no whatsapp_phone)
 ```
 
-`scripts/set-env.mjs` generates `src/environments/environment.ts` from `.env` (local) or the
-environment variables (Vercel). That generated file is git-ignored.
-
-## 4. Deploy to Vercel (≈2 min)
-
-1. <https://vercel.com/new> → **Import** this GitHub repository.
-2. Leave the framework preset as is — `vercel.json` already sets the install/build commands, the output folder, and the SPA fallback rewrite.
-3. Environment variables are optional: `public-config.json` already holds the URL, publishable key and
-   `defaultBuildingSlug`. Set `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `DEFAULT_BUILDING_SLUG` only to override them.
-4. **Deploy**. Your resident link is `https://<your-app>.vercel.app/b/<slug>`.
-5. In the app: **الإعدادات → طباعة ورقة المصعد** prints a QR poster for the elevator.
-
-## 5. Keep the free database awake (GitHub Actions)
-
-Free Supabase projects pause after 7 days without traffic. `.github/workflows/supabase-keepalive.yml`
-pings the database every 4 days (a read-only `keepalive_ping()` call).
-
-It works out of the box with `public-config.json`. To use a different project without editing that file, add
-GitHub repo → **Settings → Secrets and variables → Actions → New repository secret**:
-
-| Name | Value |
-| --- | --- |
-| `SUPABASE_URL` | your Project URL |
-| `SUPABASE_ANON_KEY` | your anon / publishable key |
-
-Then **Actions → Supabase keep-alive → Run workflow** once to check it turns green.
+`/api/*` functions run on Vercel (`vercel dev` locally, which needs the two server env vars).
 
 ---
 
-## What’s inside
+## Server API (super admin only)
 
-| Route | Who | What |
+All endpoints verify the caller's Supabase JWT (`Authorization: Bearer …`) and require `profiles.role = 'superadmin'`
+(403 otherwise). They live in [`api/superadmin/`](api/superadmin).
+
+| Method & path | Body | Does |
 | --- | --- | --- |
-| `/` | everyone | 2-line intro + enter building code; auto-opens `DEFAULT_BUILDING_SLUG` or the last building visited |
-| `/b/:slug` | residents (no login) | fund balance, pinned announcement, payments per month with status colors, apartment history drawer, expenses with receipt lightbox, emergency call/WhatsApp buttons. Works offline with the last saved copy. |
-| `/admin/login` | admin | email + password (signup hidden while `ENABLE_PUBLIC_SIGNUP=false`) |
-| `/admin` | admin | KPIs, **create month (1 click)**, copy WhatsApp report, export Excel (CSV, UTF‑8 BOM) |
-| `/admin/payments` | admin | **1-tap “تم الدفع”**, partial / exempt / notes, WhatsApp reminder |
-| `/admin/expenses` | admin | add/edit/delete, receipt photo compressed in the browser to < 150 KB |
-| `/admin/units` | admin | add/edit/reorder/delete apartments, phone auto-formatting |
-| `/admin/settings` | admin | name, slug, currency, fee, privacy toggle, announcement, emergency contacts, public link + **QR poster** |
+| `POST /api/superadmin/create-building-admin` | `{ building_id, full_name, email, phone?, password }` | Creates the user (email pre-confirmed) or links an existing one, then assigns it to the building |
+| `DELETE /api/superadmin/remove-building-admin` | `{ building_id, user_id }` | Unassigns (the account stays) |
+| `POST /api/superadmin/reset-admin-password` | `{ user_id, password }` | New password for a building admin |
 
-### Security model
+---
 
-- Every table has RLS: an authenticated user can only touch rows of buildings where `owner_id = auth.uid()`.
-- Anonymous visitors have **no direct table access**. They read through `get_public_building_dashboard(slug)`
-  (`SECURITY DEFINER`), which never returns phone numbers or private payment notes and respects “hide resident names”.
-- Receipts bucket: public read; upload/replace/delete only into your own `{building_id}/` folder.
-- Composite foreign keys stop a payment from pointing to another building’s unit or month.
+## Security model
 
-### Project layout
+- RLS on every table. `anon` has **no table privileges at all**; public data comes only from `SECURITY DEFINER` RPCs
+  `get_public_building_dashboard(slug)` (no phones, no private payment notes, honors “hide names”) and `get_public_landing_state()`.
+- Building admins: full CRUD on `units / billing_cycles / payments / expenses` only where `is_building_admin(building_id)`;
+  select/update their own building row; cannot create/delete buildings or assign admins.
+- Super admin: full CRUD on `buildings / building_admins / profiles / building_slug_redirects`; **SELECT only** on operational tables.
+- No self-promotion: users cannot update `profiles` (only a super admin can).
+- Storage `receipts`: public read; insert/update/delete only into `{building_id}/` folders of buildings you are assigned to.
+- Renamed slugs are kept in `building_slug_redirects`, so printed elevator QR codes never break; a slug still used
+  by another building's old QR code cannot be taken.
+
+## Performance
+
+Residents load only the landing/resident code: **~83 KB gzipped initial** (was 126 KB+), no supabase-js (fetch-based RPC).
+supabase-js, admin, super admin, QR and CSV code are lazy chunks. One RPC call renders the whole resident page.
+Numbers: `PROJECT_CONTEXT.md` → Performance.
+
+## PWA
+
+Installable on Android and iOS (Arabic manifest, SVG + PNG + maskable + apple-touch icons). The service worker caches
+the app shell and icons only — **Supabase and `/api` requests are never cached**, so payment statuses are always fresh.
+A banner offers updates after each deploy, and residents get an install banner (native prompt or a 2-step iOS guide).
+The last building visited is remembered, so the home-screen icon opens it directly.
+
+## Project layout
 
 ```
-supabase/migrations/001_initial_schema.sql   tables, triggers, RLS, RPCs, storage
-supabase/seed.sql                            pilot building sample data
-src/app/core/        models, Supabase client, auth, formatting, CSV, WhatsApp texts, image compression
-src/app/shared/      icons, status badge, bottom sheet, toasts
-src/app/features/    landing, public resident view, admin portal
-scripts/set-env.mjs  env → environment.ts
-PROJECT_CONTEXT.md   living context: decisions + change log
+api/                        Vercel functions (server-only, service key)
+supabase/migrations/        001 schema · 002 roles, redirects, landing RPC
+supabase/seed.sql           pilot sample data
+src/app/core/               config, fetch-based public API, auth/access, guards, formatting, WhatsApp/CSV/QR helpers
+src/app/shared/             icons, badges, sheet, lightbox, install & update banners, change password
+src/app/features/           landing (/) · public (/b/:slug) · admin (/admin/**) · superadmin (/superadmin/**)
+scripts/                    set-env (env → environment.ts, blocks secret keys) · verify-security
 ```
