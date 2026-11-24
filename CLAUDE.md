@@ -5,5 +5,6 @@
    section the change affects (schema, routes, decisions, backlog).
 3. Keep the UX rules: Arabic RTL, simple Levantine wording, status = color + icon + label, 48px touch targets,
    1-tap payment, 1-click new month, residents never log in.
-4. Verify with `pnpm build` (strict TypeScript + strict templates) before committing.
+4. Verify with `pnpm typecheck && pnpm test:unit && pnpm build` before EVERY commit — Vercel builds each pushed
+   commit separately, so every commit must build on its own (CI checks this too).
 5. Schema changes go in a NEW migration file (`supabase/migrations/00N_*.sql`); never edit an applied migration.

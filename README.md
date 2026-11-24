@@ -107,6 +107,7 @@ pnpm start                    # http://localhost:4200
 pnpm build                    # production build → dist/building-committee-app/browser
 pnpm typecheck                # strict TS for the app AND the /api functions
 pnpm test:unit                # phone normalization + login identifier tests (node:test)
+# CI (.github/workflows/ci.yml) runs typecheck → unit tests → build → verify:security on every push/PR
 pnpm verify:security [slug]   # secret-key scan + live anon checks (units/profiles blocked, no whatsapp_phone)
 ```
 
