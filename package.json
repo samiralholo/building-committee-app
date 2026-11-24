@@ -8,7 +8,9 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "config": "node scripts/set-env.mjs",
-    "typecheck": "node scripts/set-env.mjs && tsc -p tsconfig.app.json --noEmit"
+    "typecheck": "node scripts/set-env.mjs && tsc -p tsconfig.app.json --noEmit && tsc -p api/tsconfig.json",
+    "typecheck:api": "tsc -p api/tsconfig.json",
+    "verify:security": "node scripts/verify-security.mjs"
   },
   "private": true,
   "packageManager": "pnpm@10.28.0",
@@ -30,6 +32,7 @@
     "@angular/cli": "^22.3.0",
     "@angular/compiler-cli": "^22.3.0",
     "@tailwindcss/postcss": "^4.3.5",
+    "@types/node": "^26.6.6",
     "@types/qrcode": "^1.5.6",
     "postcss": "^8.5.33",
     "prettier": "^3.8.1",
