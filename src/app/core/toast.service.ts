@@ -42,7 +42,7 @@ export function arabicError(err: unknown, fallback = 'صار خطأ، جرّب �
     typeof err === 'object' && err !== null && 'message' in err ? String((err as { message: unknown }).message) : '';
   const msg = raw.toLowerCase();
   if (!raw) return fallback;
-  if (msg.includes('invalid login credentials')) return 'البريد أو كلمة السر غير صحيحة';
+  if (msg.includes('invalid login credentials')) return 'رقم الموبايل أو كلمة المرور غير صحيحة';
   if (msg.includes('email not confirmed')) return 'لازم تأكيد البريد الإلكتروني أولاً';
   if (msg.includes('failed to fetch') || msg.includes('network')) return 'ما في اتصال بالإنترنت';
   if (msg.includes('reserved')) return 'هالرمز محجوز لبناء ثاني (عليه QR قديم). اختر رمز ثاني';

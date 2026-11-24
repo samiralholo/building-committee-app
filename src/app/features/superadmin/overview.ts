@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { formatMoney, formatNumber, slugify, suggestSlug } from '../../core/format';
+import { displayableEmail, formatPhoneForDisplay, normalizePhone } from '../../core/phone-auth';
 import { ToastService, arabicError } from '../../core/toast.service';
 import { Icon } from '../../shared/icon';
 import { Sheet } from '../../shared/sheet';
@@ -56,6 +57,22 @@ import { BuildingSummary, Overview as OverviewData, SuperadminApi } from './supe
           <input id="sa-search" class="field" placeholder="ابحث باسم البناء أو الرمز…" [ngModel]="query()" (ngModelChange)="query.set($event)" />
           <button type="button" class="btn-primary" (click)="openCreate()"><app-icon name="plus" /> إضافة بناء جديد</button>
         </div>
+
+        <!-- Support WhatsApp for "نسيت كلمة المرور؟" -->
+        <section class="card flex items-center gap-3 p-3" aria-label="رقم واتساب الدعم">
+          <div class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[#25D366]/15 text-[#128C4B]">
+            <app-icon name="whatsapp" [size]="22" />
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-bold">واتساب الدعم (نسيت كلمة المرور)</p>
+            @if (supportCurrent()) {
+              <p class="num text-sm font-semibold text-ink-soft" dir="ltr" style="text-align: end">{{ fmtPhone(supportCurrent()) }}</p>
+            } @else {
+              <p class="text-sm font-semibold text-partial">غير مضبوط بعد</p>
+            }
+          </div>
+          <button type="button" class="btn-secondary shrink-0 px-3 text-sm" (click)="openSupport()">تعديل</button>
+        </section>
 
         <ul class="space-y-3">
           @for (b of filtered(); track b.id) {
@@ -143,6 +160,24 @@ import { BuildingSummary, Overview as OverviewData, SuperadminApi } from './supe
       </form>
     </app-sheet>
 
+    <!-- Support WhatsApp setting -->
+    <app-sheet [open]="supportOpen()" title="رقم واتساب الدعم" (closed)="supportOpen.set(false)">
+      <form class="space-y-4" (ngSubmit)="saveSupport()">
+        <p class="text-ink-soft">بيظهر بزر «نسيت كلمة المرور؟» بصفحة الدخول. المشرف بيبعتلك رسالة، وأنت بتعطيه كلمة مرور جديدة من «تعيين / إدارة المشرف».</p>
+        <div>
+          <label class="label" for="sup-phone">رقم الواتساب</label>
+          <input id="sup-phone" name="support" type="tel" inputmode="tel" dir="ltr" class="field num text-start" placeholder="09xxxxxxxx"
+            [ngModel]="supportInput()" (ngModelChange)="supportInput.set($event)" />
+          @if (supportPreview().text) {
+            <p class="mt-1 text-sm font-semibold" [class.text-paid]="supportPreview().ok" [class.text-unpaid]="!supportPreview().ok">
+              {{ supportPreview().ok ? '✓' : '' }} <span [attr.dir]="supportPreview().ok ? 'ltr' : null" class="num">{{ supportPreview().text }}</span>
+            </p>
+          }
+        </div>
+        <button type="submit" class="btn-primary w-full text-lg" [disabled]="busy() || !supportPreview().ok">حفظ</button>
+      </form>
+    </app-sheet>
+
     <app-manage-building [building]="managing()" (closed)="managing.set(null)" (changed)="load(true)" />
   `,
 })
@@ -177,6 +212,7 @@ export class Overview {
 
   constructor() {
     void this.load();
+    void this.loadSupport();
   }
 
   protected async load(silent = false): Promise<void> {
@@ -195,8 +231,57 @@ export class Overview {
     }
   }
 
+  /** Name, else formatted phone, else a REAL email — never the hidden phone-login address. */
   protected adminNames(b: BuildingSummary): string {
-    return b.admins.map((a) => a.full_name || a.email).join('، ');
+    return b.admins
+      .map((a) => a.full_name || (a.phone ? formatPhoneForDisplay(a.phone) : '') || displayableEmail(a.email) || 'مشرف')
+      .join('، ');
+  }
+
+  // ------------------------------------------------ support WhatsApp (login page "نسيت كلمة المرور؟")
+  protected readonly supportOpen = signal(false);
+  protected readonly supportCurrent = signal('');
+  protected readonly supportInput = signal('');
+  protected readonly supportPreview = computed(() => {
+    const raw = this.supportInput();
+    if (!raw.trim()) return { ok: false, text: '' };
+    const r = normalizePhone(raw);
+    return r.ok ? { ok: true, text: formatPhoneForDisplay(r.phone) } : { ok: false, text: r.error };
+  });
+  protected readonly fmtPhone = formatPhoneForDisplay;
+
+  private async loadSupport(): Promise<void> {
+    try {
+      const v = await this.api.getSupportWhatsapp();
+      this.supportCurrent.set(v);
+    } catch {
+      /* settings card just shows "not set" */
+    }
+  }
+
+  protected openSupport(): void {
+    const cur = this.supportCurrent();
+    this.supportInput.set(cur ? '0' + cur.replace(/^963/, '') : '');
+    this.supportOpen.set(true);
+  }
+
+  protected async saveSupport(): Promise<void> {
+    const r = normalizePhone(this.supportInput());
+    if (!r.ok) {
+      this.toast.error(r.error);
+      return;
+    }
+    this.busy.set(true);
+    try {
+      await this.api.setSupportWhatsapp(r.phone);
+      this.supportCurrent.set(r.phone);
+      this.supportOpen.set(false);
+      this.toast.success('تم حفظ رقم الدعم ✓');
+    } catch (err) {
+      this.toast.error(arabicError(err, 'ما انحفظ الرقم'));
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   protected openCreate(): void {

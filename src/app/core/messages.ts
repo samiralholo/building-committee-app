@@ -1,5 +1,6 @@
 import { BillingCycle, Building, Expense, Payment, Unit } from './models';
 import { formatMoney, remaining } from './format';
+import { formatPhoneForMessage } from './phone-auth';
 
 export function publicBuildingUrl(slug: string): string {
   return `${location.origin}/b/${slug}`;
@@ -88,25 +89,26 @@ export async function copyText(text: string): Promise<void> {
   ta.remove();
 }
 
-/** Polite Arabic message the Super Admin sends to a new building head over WhatsApp. */
+/**
+ * Polite Arabic message the Super Admin sends to a building head over WhatsApp.
+ * Contains the PHONE (their login), never the hidden synthetic email.
+ */
 export function adminCredentialsMessage(opts: {
   fullName: string;
   buildingName: string;
-  email: string;
+  phone: string;
   password: string | null;
 }): string {
   const lines = [
-    `السلام عليكم ${opts.fullName ? 'أ. ' + opts.fullName : ''}، تحية طيبة 🌷`,
-    `تم تعيينك مشرفاً على «${opts.buildingName}» في تطبيق لجنة البناء.`,
-    '',
-    `🔗 رابط الدخول: ${location.origin}/admin/login`,
-    `📧 البريد: ${opts.email}`,
+    `السلام عليكم ${opts.fullName}،`,
+    `تم تعيينك مشرفاً على ${opts.buildingName} في تطبيق لجنة البناء.`,
+    `رابط الدخول: ${location.origin}/admin/login`,
+    `رقم الموبايل: ${formatPhoneForMessage(opts.phone)}`,
   ];
   if (opts.password) {
-    lines.push(`🔑 كلمة السر المؤقتة: ${opts.password}`, '', 'بعد أول دخول، غيّر كلمة السر من «الإعدادات ← تغيير كلمة السر».');
+    lines.push(`كلمة المرور: ${opts.password}`, 'يمكنك تغيير كلمة المرور من الإعدادات بعد تسجيل الدخول.');
   } else {
-    lines.push('', 'ادخل بنفس كلمة السر اللي بتستعملها عادةً.');
+    lines.push('كلمة المرور: نفس كلمة المرور الحالية لحسابك.');
   }
-  lines.push('', 'شكراً لتعاونك.');
   return lines.join('\n');
 }

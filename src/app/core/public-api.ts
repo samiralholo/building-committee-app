@@ -82,3 +82,9 @@ export function forgetSlug(slug?: string): void {
     /* ignore */
   }
 }
+
+/** Platform support WhatsApp (normalized digits) for "نسيت كلمة المرور؟", or null when not configured. */
+export async function getSupportWhatsapp(): Promise<string | null> {
+  const v = await rpc<string | null>('get_support_whatsapp', {});
+  return typeof v === 'string' && v ? v : null;
+}

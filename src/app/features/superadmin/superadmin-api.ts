@@ -3,6 +3,7 @@ import { SupabaseService } from '../../core/supabase.service';
 
 export interface AdminSummary {
   user_id: string;
+  /** May be a hidden synthetic phone login (<digits>@phone.lajna.app) — never render it directly. */
   email: string;
   full_name: string;
   phone: string | null;
@@ -33,10 +34,19 @@ export interface Overview {
 
 export interface CreateAdminResult {
   user_id: string;
-  email: string;
-  created: boolean;
+  full_name: string;
+  phone: string;
+  already_existed: boolean;
   building: { id: string; name: string; slug: string };
 }
+
+export interface AdminPhoneResult {
+  user_id: string;
+  full_name: string;
+  phone: string | null;
+}
+
+const SUPPORT_KEY = 'support_whatsapp_phone';
 
 /**
  * Super Admin data access.
@@ -72,22 +82,35 @@ export class SuperadminApi {
     if (error) throw error;
   }
 
-  createBuildingAdmin(body: {
-    building_id: string;
-    full_name: string;
-    email: string;
-    phone: string | null;
-    password: string;
-  }): Promise<CreateAdminResult> {
+  /** Phone-based building admin (logs in with phone + password). */
+  createBuildingAdmin(body: { building_id: string; full_name: string; phone: string; password: string }): Promise<CreateAdminResult> {
     return this.call<CreateAdminResult>('create-building-admin', 'POST', body);
   }
 
-  removeBuildingAdmin(body: { building_id: string; user_id: string }): Promise<{ ok: true }> {
+  removeBuildingAdmin(body: { building_id: string; user_id: string }): Promise<{ ok: true } & AdminPhoneResult> {
     return this.call('remove-building-admin', 'DELETE', body);
   }
 
-  resetAdminPassword(body: { user_id: string; password: string }): Promise<{ ok: true }> {
+  resetAdminPassword(body: { user_id: string; password: string }): Promise<{ ok: true } & AdminPhoneResult> {
     return this.call('reset-admin-password', 'POST', body);
+  }
+
+  updateAdminPhone(body: { user_id: string; new_phone: string }): Promise<AdminPhoneResult> {
+    return this.call('update-admin-phone', 'POST', body);
+  }
+
+  /** Support WhatsApp shown on the login page ("نسيت كلمة المرور؟"). Superadmin-only table (RLS). */
+  async getSupportWhatsapp(): Promise<string> {
+    const { data, error } = await this.db.from('platform_settings').select('value').eq('key', SUPPORT_KEY).maybeSingle();
+    if (error) throw error;
+    return (data?.value as string | undefined) ?? '';
+  }
+
+  async setSupportWhatsapp(normalizedPhone: string): Promise<void> {
+    const { error } = await this.db
+      .from('platform_settings')
+      .upsert({ key: SUPPORT_KEY, value: normalizedPhone }, { onConflict: 'key' });
+    if (error) throw error;
   }
 
   private async call<T>(path: string, method: 'POST' | 'DELETE', body: unknown): Promise<T> {

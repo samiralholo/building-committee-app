@@ -15,6 +15,8 @@ export interface MyAccess {
   user_id: string;
   role: Role;
   full_name: string;
+  /** Normalized login phone of building admins (null for email-only accounts). */
+  phone: string | null;
   buildings: AssignedBuilding[];
 }
 

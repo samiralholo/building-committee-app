@@ -5,6 +5,7 @@ import {
   PHONE_INVALID_MESSAGE,
   displayableEmail,
   formatPhoneForDisplay,
+  formatPhoneForMessage,
   isSyntheticPhoneEmail,
   normalizePhone,
   phoneToAuthEmail,
@@ -111,4 +112,12 @@ test('formatPhoneForDisplay', () => {
   assert.equal(formatPhoneForDisplay('971501234567'), '+971501234567');
   assert.equal(formatPhoneForDisplay('14155550100'), '+14155550100');
   assert.equal(formatPhoneForDisplay(''), '');
+});
+
+test('formatPhoneForMessage: one bidi-safe token for Arabic messages', () => {
+  assert.equal(formatPhoneForMessage('963912345678'), '0912345678');
+  assert.equal(formatPhoneForMessage('971501234567'), '\u200E+971501234567');
+  // round-trips through login
+  assert.equal(resolveLoginIdentifier(formatPhoneForMessage('963912345678')).kind, 'phone');
+  assert.deepEqual(normalizePhone(formatPhoneForMessage('971501234567')), { ok: true, phone: '971501234567' });
 });

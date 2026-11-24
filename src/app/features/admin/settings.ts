@@ -4,6 +4,8 @@ import { RouterLink } from '@angular/router';
 import { slugify } from '../../core/format';
 import { copyText, publicBuildingUrl } from '../../core/messages';
 import { makeQrDataUrl, printElevatorPoster } from '../../core/qr-poster';
+import { AccessService } from '../../core/access.service';
+import { formatPhoneForDisplay } from '../../core/phone-auth';
 import { ChangePassword } from '../../shared/change-password';
 import { EmergencyContact } from '../../core/models';
 import { isValidPhone, phoneDigits, tidyPhoneInput } from '../../core/phone';
@@ -150,6 +152,17 @@ const ROLE_SUGGESTIONS = ['مشرف البناء', 'سبّاك', 'كهربجي',
         <!-- Account -->
         <section class="card space-y-2 p-4">
           <h2 class="flex items-center gap-2 text-lg font-extrabold"><app-icon name="key" /> حسابي</h2>
+          @if (access.access(); as me) {
+            <div class="flex items-center justify-between gap-3 rounded-xl bg-page px-4 py-3">
+              <span class="font-bold">{{ me.full_name || 'المشرف' }}</span>
+              @if (me.phone) {
+                <span class="num text-ink-soft" dir="ltr">{{ fmtPhone(me.phone) }}</span>
+              }
+            </div>
+            @if (me.phone) {
+              <p class="text-sm text-ink-soft">بتدخل بهالرقم + كلمة المرور.</p>
+            }
+          }
           <p class="text-ink-soft">غيّر كلمة السر اللي وصلتك من المشرف العام بكلمة بتعرفها لحالك.</p>
           <button type="button" class="btn-secondary w-full" (click)="pwOpen.set(true)"><app-icon name="key" [size]="18" /> تغيير كلمة السر</button>
         </section>
@@ -176,6 +189,8 @@ export class Settings {
 
   protected readonly saving = signal(false);
   protected readonly pwOpen = signal(false);
+  protected readonly access = inject(AccessService);
+  protected readonly fmtPhone = formatPhoneForDisplay;
   protected readonly qr = signal<string>('');
   protected readonly publicUrl = signal('');
   protected readonly contacts = signal<EmergencyContact[]>([]);

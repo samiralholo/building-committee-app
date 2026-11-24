@@ -107,6 +107,18 @@ export function formatPhoneForDisplay(normalizedPhone: string | null | undefined
   return d ? '+' + d : '';
 }
 
+/**
+ * Phone inside an Arabic sentence (WhatsApp messages). Spaced groups get reordered by the
+ * bidi algorithm in RTL text, so use one unbroken token:
+ *   Syrian  "963912345678" → "0912345678"  (exactly what admins type at login)
+ *   others  "971501234567" → "\u200E+971501234567" (LRM keeps the "+" in front)
+ */
+export function formatPhoneForMessage(normalizedPhone: string): string {
+  const d = normalizedPhone.replace(/\D/g, '');
+  if (d.startsWith(DEFAULT_COUNTRY_CODE) && d.length === 12) return '0' + d.slice(3);
+  return '\u200E+' + d;
+}
+
 /** Login box accepts "mobile number OR email": emails pass through, phones become their synthetic login email. */
 export function resolveLoginIdentifier(input: string | null | undefined): LoginIdentifier {
   const trimmed = (input ?? '').trim();
