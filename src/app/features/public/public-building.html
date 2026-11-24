@@ -86,19 +86,6 @@
     }
 
     @if (data(); as d) {
-      <!-- ===== Announcement ===== -->
-      @if (d.building.announcement) {
-        <section class="flex gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sky-900" aria-label="إعلان">
-          <app-icon name="megaphone" [size]="24" class="mt-0.5 text-sky-700" />
-          <div class="min-w-0 flex-1">
-            <p class="text-base leading-relaxed font-semibold whitespace-pre-line">{{ d.building.announcement }}</p>
-            @if (d.building.announcement_updated_at) {
-              <p class="mt-1 text-sm text-sky-800/80">{{ fmtRelative(d.building.announcement_updated_at) }}</p>
-            }
-          </div>
-        </section>
-      }
-
       <!-- ===== Fund summary ===== -->
       <section class="card overflow-hidden" aria-label="صندوق البناء">
         <div class="bg-brand px-5 py-5 text-white">
@@ -139,6 +126,28 @@
         }
       </section>
 
+      <!-- ===== Announcement ===== -->
+      @if (d.building.announcement) {
+        <section class="flex gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sky-900" aria-label="إعلان">
+          <app-icon name="megaphone" [size]="24" class="mt-0.5 text-sky-700" />
+          <div class="min-w-0 flex-1">
+            <p class="text-base leading-relaxed font-semibold whitespace-pre-line" [class.line-clamp-2]="!announcementOpen()">
+              {{ d.building.announcement }}
+            </p>
+            @if (d.building.announcement.length > 90) {
+              <button type="button" class="mt-1 min-h-10 text-sm font-bold text-sky-800 underline" (click)="announcementOpen.set(!announcementOpen())">
+                {{ announcementOpen() ? 'أقل' : 'اقرأ الإعلان كامل' }}
+              </button>
+            }
+            @if (d.building.announcement_updated_at) {
+              <p class="mt-1 text-sm text-sky-800/80">{{ fmtRelative(d.building.announcement_updated_at) }}</p>
+            }
+          </div>
+        </section>
+      }
+
+      <app-install-banner />
+
       <!-- ===== Tabs (bottom bar on phones, inline on desktop) ===== -->
       <nav
         class="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white pb-[env(safe-area-inset-bottom)] sm:static sm:rounded-2xl sm:border sm:p-1"
@@ -148,7 +157,7 @@
           @for (t of tabs; track t.id) {
             <button
               type="button"
-              class="flex min-h-16 flex-col items-center justify-center gap-0.5 px-1 text-center text-sm leading-tight font-bold transition-colors sm:min-h-12 sm:flex-row sm:gap-2 sm:rounded-xl sm:text-base"
+              class="flex min-h-16 flex-col items-center justify-center gap-1 px-1 text-center text-sm leading-tight font-bold transition-colors sm:min-h-12 sm:flex-row sm:gap-2 sm:rounded-xl sm:text-base"
               [class]="tab() === t.id ? 'text-brand sm:bg-brand sm:text-white' : 'text-ink-soft'"
               [attr.aria-current]="tab() === t.id ? 'page' : null"
               (click)="tab.set(t.id)"
@@ -368,20 +377,10 @@
   }
 </app-sheet>
 
-<!-- ===== Receipt lightbox ===== -->
-@if (receipt(); as r) {
-  <div class="fixed inset-0 z-50 flex flex-col bg-black/95 animate-fade-in" role="dialog" aria-modal="true" [attr.aria-label]="r.title">
-    <div class="flex items-center gap-3 p-3 text-white">
-      <div class="min-w-0 flex-1">
-        <p class="truncate font-bold">{{ r.title }}</p>
-        <p class="num text-sm text-white/80">{{ fmtMoney(r.amount) }} · {{ fmtDate(r.expense_date) }}</p>
-      </div>
-      <button type="button" class="btn-icon text-white hover:bg-white/10" aria-label="إغلاق" (click)="receipt.set(null)">
-        <app-icon name="x" [size]="28" />
-      </button>
-    </div>
-    <button type="button" class="flex min-h-0 flex-1 items-center justify-center p-2" (click)="receipt.set(null)" aria-label="إغلاق">
-      <img [src]="r.receipt_url" [alt]="'فاتورة: ' + r.title" class="max-h-full max-w-full rounded-lg object-contain" />
-    </button>
-  </div>
-}
+<!-- ===== Receipt lightbox (zoomable) ===== -->
+<app-lightbox
+  [src]="receipt()?.receipt_url ?? null"
+  [title]="receipt()?.title ?? ''"
+  [subtitle]="receipt() ? fmtMoney(receipt()!.amount) + ' · ' + fmtDate(receipt()!.expense_date) : ''"
+  (closed)="receipt.set(null)"
+/>

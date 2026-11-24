@@ -1,6 +1,5 @@
 {
   "$comment": "Public, browser-safe Supabase settings (publishable key; data is protected by RLS). Env vars SUPABASE_URL / SUPABASE_ANON_KEY override these. NEVER put a secret/service_role key here.",
   "supabaseUrl": "https://slqjhpvwsctwvajpnorq.supabase.co",
-  "supabasePublishableKey": "sb_publishable_wKrzYxrRuBJDdfvcBYqCwg_W7QPZDMj",
-  "defaultBuildingSlug": "al-yasmin-14"
+  "supabasePublishableKey": "sb_publishable_wKrzYxrRuBJDdfvcBYqCwg_W7QPZDMj"
 }

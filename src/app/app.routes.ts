@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
-import { authGuard, guestGuard } from './core/auth.guard';
 
+// Only the landing page and the resident view live in the initial bundle path.
+// Everything that needs supabase-js (auth, admin, super admin) is a lazy route group.
 export const routes: Routes = [
   {
     path: '',
@@ -14,42 +15,12 @@ export const routes: Routes = [
     loadComponent: () => import('./features/public/public-building').then((m) => m.PublicBuilding),
   },
   {
-    path: 'admin/login',
-    title: 'دخول المشرف',
-    canActivate: [guestGuard],
-    loadComponent: () => import('./features/admin/login').then((m) => m.Login),
+    path: 'admin',
+    loadChildren: () => import('./features/admin/admin.routes').then((m) => m.ADMIN_ROUTES),
   },
   {
-    path: 'admin',
-    canActivate: [authGuard],
-    loadComponent: () => import('./features/admin/admin-shell').then((m) => m.AdminShell),
-    children: [
-      {
-        path: '',
-        title: 'لوحة المشرف',
-        loadComponent: () => import('./features/admin/dashboard').then((m) => m.Dashboard),
-      },
-      {
-        path: 'payments',
-        title: 'تحصيل الدفعات',
-        loadComponent: () => import('./features/admin/payments').then((m) => m.Payments),
-      },
-      {
-        path: 'expenses',
-        title: 'المصاريف',
-        loadComponent: () => import('./features/admin/expenses').then((m) => m.Expenses),
-      },
-      {
-        path: 'units',
-        title: 'الشقق',
-        loadComponent: () => import('./features/admin/units').then((m) => m.Units),
-      },
-      {
-        path: 'settings',
-        title: 'إعدادات البناء',
-        loadComponent: () => import('./features/admin/settings').then((m) => m.Settings),
-      },
-    ],
+    path: 'superadmin',
+    loadChildren: () => import('./features/superadmin/superadmin.routes').then((m) => m.SUPERADMIN_ROUTES),
   },
   { path: '**', redirectTo: '' },
 ];

@@ -5,6 +5,5 @@ import type { AppEnvironment } from './environment.model';
 export const environment: AppEnvironment = {
   supabaseUrl: 'https://YOUR-PROJECT-REF.supabase.co',
   supabaseAnonKey: 'YOUR-SUPABASE-ANON-KEY',
-  defaultBuildingSlug: '',
   enablePublicSignup: false,
 };

@@ -31,16 +31,36 @@ const get = (key, fallback = '') => process.env[key] || fileVars[key] || fallbac
 // Committed, browser-safe defaults (publishable key only). Env vars win over these.
 const publicConfigPath = resolve(root, 'public-config.json');
 const pub = existsSync(publicConfigPath) ? JSON.parse(readFileSync(publicConfigPath, 'utf8')) : {};
-if (String(pub.supabasePublishableKey ?? '').startsWith('sb_secret_')) {
-  throw new Error('public-config.json must never contain a secret key');
+
+/** True for keys that must never reach the browser (Supabase secret / service_role keys). */
+function isSecretKey(key) {
+  if (!key) return false;
+  if (key.startsWith('sb_secret_')) return true;
+  const parts = key.split('.');
+  if (parts.length === 3) {
+    try {
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+      return payload.role === 'service_role';
+    } catch {
+      return false;
+    }
+  }
+  return false;
 }
 
 const env = {
   supabaseUrl: get('SUPABASE_URL', pub.supabaseUrl ?? '').replace(/\/+$/, ''),
   supabaseAnonKey: get('SUPABASE_ANON_KEY', pub.supabasePublishableKey ?? ''),
-  defaultBuildingSlug: get('DEFAULT_BUILDING_SLUG', pub.defaultBuildingSlug ?? ''),
   enablePublicSignup: get('ENABLE_PUBLIC_SIGNUP', 'false').toLowerCase() === 'true',
 };
+
+// Hard stop: the client bundle may only ever contain the public anon/publishable key.
+if (isSecretKey(env.supabaseAnonKey)) {
+  throw new Error(
+    'SUPABASE_ANON_KEY holds a SECRET / service_role key. Use the anon or publishable key; ' +
+      'SUPABASE_SERVICE_ROLE_KEY is for the /api serverless functions only.',
+  );
+}
 
 const out = resolve(root, 'src/environments/environment.ts');
 mkdirSync(dirname(out), { recursive: true });

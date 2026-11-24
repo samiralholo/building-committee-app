@@ -8,9 +8,9 @@ import {
   input,
   linkedSignal,
   signal,
+  untracked,
 } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { LAST_SLUG_STORAGE_KEY } from '../../core/config';
+import { Router, RouterLink } from '@angular/router';
 import {
   CATEGORY_META,
   formatDate,
@@ -21,8 +21,10 @@ import {
 } from '../../core/format';
 import { Expense, Payment, PublicDashboard, PublicUnit } from '../../core/models';
 import { prettyPhone, telHref, waHref } from '../../core/phone';
-import { SupabaseService } from '../../core/supabase.service';
+import { PublicApiError, forgetSlug, getPublicDashboard, rememberSlug } from '../../core/public-api';
 import { Icon, IconName } from '../../shared/icon';
+import { InstallBanner } from '../../shared/install-banner';
+import { Lightbox } from '../../shared/lightbox';
 import { Sheet } from '../../shared/sheet';
 import { StatusBadge } from '../../shared/status-badge';
 
@@ -48,7 +50,6 @@ function readCache(slug: string): PublicDashboard | null {
 function writeCache(slug: string, data: PublicDashboard): void {
   try {
     localStorage.setItem(cacheKey(slug), JSON.stringify(data));
-    localStorage.setItem(LAST_SLUG_STORAGE_KEY, slug);
   } catch {
     /* storage full or blocked — not important */
   }
@@ -56,12 +57,12 @@ function writeCache(slug: string, data: PublicDashboard): void {
 
 @Component({
   selector: 'app-public-building',
-  imports: [RouterLink, Icon, Sheet, StatusBadge],
+  imports: [RouterLink, Icon, Sheet, StatusBadge, InstallBanner, Lightbox],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './public-building.html',
 })
 export class PublicBuilding {
-  private readonly supabase = inject(SupabaseService);
+  private readonly router = inject(Router);
 
   /** Route param `/b/:slug` (bound via withComponentInputBinding). */
   readonly slug = input.required<string>();
@@ -74,7 +75,7 @@ export class PublicBuilding {
 
   protected readonly tabs: ReadonlyArray<{ id: Tab; label: string; icon: IconName }> = [
     { id: 'payments', label: 'الدفعات', icon: 'coins' },
-    { id: 'expenses', label: 'المصاريف والفواتير', icon: 'receipt' },
+    { id: 'expenses', label: 'المصاريف', icon: 'receipt' },
     { id: 'services', label: 'خدمات البناء', icon: 'phone' },
   ];
   protected readonly tab = signal<Tab>('payments');
@@ -84,6 +85,9 @@ export class PublicBuilding {
   protected readonly expenseCycleFilter = signal<string>('all');
   protected readonly openUnitId = signal<string | null>(null);
   protected readonly receipt = signal<Expense | null>(null);
+  protected readonly announcementOpen = signal(false);
+
+  private skipNextLoad = false;
 
   protected readonly fmtMoney = (v: number | null | undefined) => formatMoney(v, this.currency());
   protected readonly fmtNum = formatNumber;
@@ -161,8 +165,15 @@ export class PublicBuilding {
   constructor() {
     effect(() => {
       const slug = this.slug().toLowerCase();
-      this.data.set(null);
-      void this.load(slug);
+      if (this.skipNextLoad) {
+        this.skipNextLoad = false;
+        return;
+      }
+      // untracked: load() reads data(); tracking it here would re-run this effect on every response.
+      untracked(() => {
+        this.data.set(null);
+        void this.load(slug);
+      });
     });
 
     // Refresh when the resident comes back to the app (installed PWA stays open for days).
@@ -173,48 +184,55 @@ export class PublicBuilding {
     inject(DestroyRef).onDestroy(() => document.removeEventListener('visibilitychange', onVisible));
   }
 
+  /**
+   * Network first, always: residents must never see a stale "غير مدفوع" after the admin marked it paid.
+   * The saved copy is only shown when the network fails (with a clear offline notice).
+   */
   protected async load(slug: string, silent = false): Promise<void> {
-    if (!this.supabase.configured) {
-      this.error.set('config');
-      this.loading.set(false);
-      return;
-    }
     if (silent) this.refreshing.set(true);
-    else {
-      const cached = readCache(slug);
-      if (cached) this.data.set(cached);
-      this.loading.set(!cached);
-    }
+    else this.loading.set(!this.data());
 
-    const { data, error } = await this.supabase.client.rpc('get_public_building_dashboard', { p_slug: slug });
-
-    this.loading.set(false);
-    this.refreshing.set(false);
-
-    if (error) {
-      if (this.data()) {
+    let dash: PublicDashboard | null;
+    try {
+      dash = await getPublicDashboard(slug);
+    } catch (err) {
+      this.loading.set(false);
+      this.refreshing.set(false);
+      if (err instanceof PublicApiError && err.kind === 'config') {
+        this.error.set('config');
+        return;
+      }
+      const cached = this.data() ?? readCache(slug);
+      if (cached) {
+        this.data.set(cached);
         this.offline.set(true);
       } else {
         this.error.set('network');
       }
       return;
     }
-    if (!data) {
+
+    this.loading.set(false);
+    this.refreshing.set(false);
+    if (!dash) {
       this.data.set(null);
       this.error.set('not-found');
-      try {
-        if (localStorage.getItem(LAST_SLUG_STORAGE_KEY) === slug) localStorage.removeItem(LAST_SLUG_STORAGE_KEY);
-      } catch {
-        /* ignore */
-      }
+      forgetSlug(slug);
       return;
     }
-    const dash = data as PublicDashboard;
     this.error.set(null);
     this.offline.set(false);
     this.data.set(dash);
-    writeCache(slug, dash);
+
+    const canonical = dash.building.slug;
+    writeCache(canonical, dash);
+    rememberSlug(canonical);
     document.title = `${dash.building.name} — صندوق البناء`;
+    if (canonical !== slug) {
+      // Old QR code / renamed building → show the current address without reloading.
+      this.skipNextLoad = true;
+      void this.router.navigate(['/b', canonical], { replaceUrl: true });
+    }
   }
 
   protected onCycleChange(event: Event): void {

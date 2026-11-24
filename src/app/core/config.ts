@@ -2,15 +2,17 @@ import { environment } from '../../environments/environment';
 
 /**
  * Pilot-mode guardrail. While false, there is no public signup anywhere in the UI:
- * admins are created manually in Supabase Auth. Set ENABLE_PUBLIC_SIGNUP=true
- * (env var) when you are ready to open the app to other buildings.
+ * building admins are created by the Super Admin (/superadmin → /api/superadmin/*).
  */
 export const ENABLE_PUBLIC_SIGNUP: boolean = environment.enablePublicSignup;
 
-export const DEFAULT_BUILDING_SLUG: string = environment.defaultBuildingSlug;
-
-export const SUPABASE_CONFIGURED: boolean = Boolean(environment.supabaseUrl && environment.supabaseAnonKey);
+export const SUPABASE_URL: string = environment.supabaseUrl;
+export const SUPABASE_ANON_KEY: string = environment.supabaseAnonKey;
+export const SUPABASE_CONFIGURED: boolean = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
 export const RECEIPTS_BUCKET = 'receipts';
 
-export const LAST_SLUG_STORAGE_KEY = 'bc:last-slug';
+/** Residents' building, remembered so the installed app icon always opens it directly. */
+export const LAST_SLUG_STORAGE_KEY = 'last_visited_building_slug';
+/** Pre-upgrade key, migrated on first read. */
+export const LEGACY_LAST_SLUG_STORAGE_KEY = 'bc:last-slug';
