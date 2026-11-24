@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
+import { AccessService } from '../../core/access.service';
 import { AuthService } from '../../core/auth.service';
 import { ENABLE_PUBLIC_SIGNUP, SUPABASE_CONFIGURED } from '../../core/config';
 import { ToastService, arabicError } from '../../core/toast.service';
@@ -17,7 +18,7 @@ import { Icon } from '../../shared/icon';
           <app-icon name="shield" [size]="34" />
         </div>
         <h1 class="text-2xl font-extrabold">{{ mode() === 'login' ? 'دخول المشرف' : 'حساب مشرف جديد' }}</h1>
-        <p class="mt-1 text-ink-soft">هالصفحة لمشرف لجنة البناء فقط. السكان ما بيحتاجوا يسجلوا.</p>
+        <p class="mt-1 text-ink-soft">هالصفحة لمشرفي الأبنية فقط. السكان ما بيحتاجوا يسجلوا.</p>
       </div>
 
       @if (!configured) {
@@ -76,6 +77,7 @@ import { Icon } from '../../shared/icon';
 })
 export class Login {
   private readonly auth = inject(AuthService);
+  private readonly access = inject(AccessService);
   private readonly router = inject(Router);
   private readonly toast = inject(ToastService);
 
@@ -102,8 +104,15 @@ export class Login {
       } else {
         await this.auth.signIn(this.email.trim(), this.password);
       }
-      const target = this.next()?.startsWith('/admin') ? this.next()! : '/admin';
-      await this.router.navigateByUrl(target);
+      // Role-aware landing: superadmin → /superadmin, building admin → /admin.
+      const acc = await this.access.load(true);
+      const home = this.access.homeUrl(acc);
+      const next = this.next();
+      const nextAllowed =
+        !!next &&
+        !next.startsWith('/admin/login') &&
+        (next.startsWith('/superadmin') ? acc?.role === 'superadmin' : next.startsWith('/admin'));
+      await this.router.navigateByUrl(nextAllowed ? next! : home);
     } catch (err) {
       this.toast.error(arabicError(err, 'ما قدرنا نسجّل الدخول'));
     } finally {

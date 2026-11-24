@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { AccessService } from '../../core/access.service';
 import { AuthService } from '../../core/auth.service';
 import { Icon, IconName } from '../../shared/icon';
 import { AdminStore } from './admin-store';
@@ -32,11 +33,17 @@ import { AdminStore } from './admin-store';
               <h1 class="truncate text-lg leading-tight font-extrabold">{{ store.building()?.name ?? 'لجنة البناء' }}</h1>
             }
           </div>
+          @if (access.isSuperadmin()) {
+            <a class="btn-icon text-brand" routerLink="/superadmin" aria-label="لوحة السوبر أدمن" title="لوحة السوبر أدمن">
+              <app-icon name="building" [size]="22" />
+            </a>
+          }
           @if (store.building(); as b) {
             <a class="btn-icon" [routerLink]="['/b', b.slug]" target="_blank" aria-label="صفحة السكان" title="صفحة السكان">
               <app-icon name="external" [size]="22" />
             </a>
           }
+
           <button type="button" class="btn-icon" aria-label="تسجيل خروج" title="تسجيل خروج" (click)="logout()">
             <app-icon name="logout" [size]="22" />
           </button>
@@ -76,10 +83,20 @@ import { AdminStore } from './admin-store';
               <app-icon name="refresh" /> حاول مرة ثانية
             </button>
           </div>
+        } @else if (!store.building()) {
+          <div class="card mx-auto max-w-md p-8 text-center">
+            <div class="mx-auto mb-3 flex size-16 items-center justify-center rounded-2xl bg-exempt-bg text-exempt">
+              <app-icon name="building" [size]="34" />
+            </div>
+            <p class="text-lg font-bold">ما في بناء معيّن لك لسا</p>
+            <p class="mt-1 text-ink-soft">تواصل مع المشرف العام ليعيّنك على بنائك، بعدين سجّل دخول من جديد.</p>
+            <button type="button" class="btn-secondary mt-4" (click)="logout()"><app-icon name="logout" /> تسجيل خروج</button>
+          </div>
         } @else {
           <router-outlet />
         }
       </main>
+
 
       <!-- Mobile bottom nav -->
       <nav
@@ -105,6 +122,7 @@ import { AdminStore } from './admin-store';
 })
 export class AdminShell {
   protected readonly store = inject(AdminStore);
+  protected readonly access = inject(AccessService);
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
 
@@ -126,6 +144,7 @@ export class AdminShell {
 
   protected async logout(): Promise<void> {
     await this.auth.signOut();
+    this.access.clear();
     this.store.reset();
     await this.router.navigateByUrl('/admin/login');
   }

@@ -11,7 +11,9 @@ export interface EmergencyContact {
 export interface Building {
   id: string;
   slug: string;
-  owner_id: string;
+  /** "created by" history only — access comes from building_admins (migration 002). */
+  owner_id: string | null;
+  is_active: boolean;
   name: string;
   currency: string;
   default_monthly_fee: number;

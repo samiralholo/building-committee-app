@@ -126,3 +126,17 @@ export function slugify(input: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 60);
 }
+
+const AR_TO_LATIN: Record<string, string> = {
+  ا: 'a', أ: 'a', إ: 'e', آ: 'a', ب: 'b', ت: 't', ث: 'th', ج: 'j', ح: 'h', خ: 'kh', د: 'd', ذ: 'th',
+  ر: 'r', ز: 'z', س: 's', ش: 'sh', ص: 's', ض: 'd', ط: 't', ظ: 'z', ع: 'a', غ: 'gh', ف: 'f', ق: 'q',
+  ك: 'k', ل: 'l', م: 'm', ن: 'n', ه: 'h', ة: 'a', و: 'w', ي: 'y', ى: 'a', ئ: 'e', ؤ: 'o', ء: '',
+  '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4', '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9',
+};
+
+/** "بناء الياسمين - مدخل أ" → "alyasmin-mdkhl-a" (drops the generic word "بناء"). */
+export function suggestSlug(name: string): string {
+  const cleaned = name.replace(/^\s*(بناء|بناية|عمارة|برج)\s+/u, '');
+  const latin = [...cleaned].map((ch) => AR_TO_LATIN[ch] ?? ch).join('');
+  return slugify(latin);
+}

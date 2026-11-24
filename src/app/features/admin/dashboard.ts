@@ -1,24 +1,20 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { cycleReportRows, downloadCsv } from '../../core/csv';
 import { formatMoney, formatNumber, remaining, slugify } from '../../core/format';
 import { copyText, whatsappMonthlyReport } from '../../core/messages';
 import { ToastService } from '../../core/toast.service';
 import { Icon } from '../../shared/icon';
 import { StatusBadge } from '../../shared/status-badge';
 import { AdminStore } from './admin-store';
-import { CreateBuilding } from './create-building';
 import { CreateCycle } from './create-cycle';
 import { CycleSelect } from './cycle-select';
 
 @Component({
   selector: 'app-dashboard',
-  imports: [RouterLink, Icon, StatusBadge, CreateBuilding, CreateCycle, CycleSelect],
+  imports: [RouterLink, Icon, StatusBadge, CreateCycle, CycleSelect],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    @if (!store.building()) {
-      <app-create-building />
-    } @else {
+    @if (store.building()) {
       <div class="space-y-5">
         <!-- Quick actions -->
         <section class="grid grid-cols-1 gap-2 sm:grid-cols-3" aria-label="إجراءات سريعة">
@@ -172,10 +168,11 @@ export class Dashboard {
     }
   }
 
-  protected exportCsv(): void {
+  protected async exportCsv(): Promise<void> {
     const building = this.store.building();
     const cycle = this.cycle();
     if (!building || !cycle) return;
+    const { cycleReportRows, downloadCsv } = await import('../../core/csv'); // lazy: only when exporting
     const rows = cycleReportRows({
       building,
       cycle,

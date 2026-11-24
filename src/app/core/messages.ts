@@ -87,3 +87,26 @@ export async function copyText(text: string): Promise<void> {
   document.execCommand('copy');
   ta.remove();
 }
+
+/** Polite Arabic message the Super Admin sends to a new building head over WhatsApp. */
+export function adminCredentialsMessage(opts: {
+  fullName: string;
+  buildingName: string;
+  email: string;
+  password: string | null;
+}): string {
+  const lines = [
+    `السلام عليكم ${opts.fullName ? 'أ. ' + opts.fullName : ''}، تحية طيبة 🌷`,
+    `تم تعيينك مشرفاً على «${opts.buildingName}» في تطبيق لجنة البناء.`,
+    '',
+    `🔗 رابط الدخول: ${location.origin}/admin/login`,
+    `📧 البريد: ${opts.email}`,
+  ];
+  if (opts.password) {
+    lines.push(`🔑 كلمة السر المؤقتة: ${opts.password}`, '', 'بعد أول دخول، غيّر كلمة السر من «الإعدادات ← تغيير كلمة السر».');
+  } else {
+    lines.push('', 'ادخل بنفس كلمة السر اللي بتستعملها عادةً.');
+  }
+  lines.push('', 'شكراً لتعاونك.');
+  return lines.join('\n');
+}

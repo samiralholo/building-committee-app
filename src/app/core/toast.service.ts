@@ -45,6 +45,7 @@ export function arabicError(err: unknown, fallback = 'صار خطأ، جرّب �
   if (msg.includes('invalid login credentials')) return 'البريد أو كلمة السر غير صحيحة';
   if (msg.includes('email not confirmed')) return 'لازم تأكيد البريد الإلكتروني أولاً';
   if (msg.includes('failed to fetch') || msg.includes('network')) return 'ما في اتصال بالإنترنت';
+  if (msg.includes('reserved')) return 'هالرمز محجوز لبناء ثاني (عليه QR قديم). اختر رمز ثاني';
   if (msg.includes('duplicate key') && msg.includes('slug')) return 'رمز البناء مستخدم من قبل، اختر رمز ثاني';
   if (msg.includes('buildings_slug_check') || msg.includes('slug')) return 'رمز البناء لازم يكون حروف إنجليزية صغيرة وأرقام وشرطات فقط';
   if (msg.includes('whatsapp_phone')) return 'رقم الواتساب غير صحيح (أرقام فقط مع رمز الدولة)';

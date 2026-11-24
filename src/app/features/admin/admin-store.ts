@@ -1,5 +1,5 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { AuthService } from '../../core/auth.service';
+import { AccessService } from '../../core/access.service';
 import { RECEIPTS_BUCKET } from '../../core/config';
 import { deriveStatus, remaining } from '../../core/format';
 import { BillingCycle, Building, CycleType, Expense, Payment, Unit } from '../../core/models';
@@ -7,7 +7,6 @@ import { SupabaseService } from '../../core/supabase.service';
 
 const SELECTED_BUILDING_KEY = 'bc:admin-building';
 
-export type BuildingDraft = Pick<Building, 'name' | 'slug' | 'currency' | 'default_monthly_fee'>;
 export type UnitDraft = Pick<Unit, 'label' | 'floor' | 'resident_name' | 'whatsapp_phone' | 'is_occupied'>;
 export type ExpenseDraft = Pick<Expense, 'title' | 'category' | 'amount' | 'expense_date' | 'cycle_id' | 'notes'>;
 
@@ -27,7 +26,7 @@ function sortExpenses(list: Expense[]): Expense[] {
 @Injectable()
 export class AdminStore {
   private readonly db = inject(SupabaseService).client;
-  private readonly auth = inject(AuthService);
+  private readonly accessService = inject(AccessService);
 
   readonly buildings = signal<Building[]>([]);
   readonly buildingId = signal<string | null>(null);
@@ -37,6 +36,8 @@ export class AdminStore {
   readonly expenses = signal<Expense[]>([]);
   readonly loading = signal(true);
   readonly loadError = signal(false);
+  /** Super Admin inspection: data is shown, every mutation is hidden (RLS also blocks it). */
+  readonly readOnly = signal(false);
 
   readonly building = computed(() => this.buildings().find((b) => b.id === this.buildingId()) ?? null);
   readonly latestCycle = computed(() => this.cycles()[0] ?? null);
@@ -62,9 +63,15 @@ export class AdminStore {
     this.loading.set(true);
     this.loadError.set(false);
     try {
-      const { data, error } = await this.db.from('buildings').select('*').order('created_at');
-      if (error) throw error;
-      const list = (data ?? []) as Building[];
+      // Only the buildings this user is ASSIGNED to (a superadmin can read all, but manages only assigned ones).
+      const acc = await this.accessService.load();
+      const ids = acc?.buildings.map((b) => b.id) ?? [];
+      let list: Building[] = [];
+      if (ids.length) {
+        const { data, error } = await this.db.from('buildings').select('*').in('id', ids).order('created_at');
+        if (error) throw error;
+        list = (data ?? []) as Building[];
+      }
       this.buildings.set(list);
       let preferred: string | null = null;
       try {
@@ -75,6 +82,25 @@ export class AdminStore {
       const chosen = list.find((b) => b.id === preferred) ?? list[0] ?? null;
       this.buildingId.set(chosen?.id ?? null);
       if (chosen) await this.loadBuildingData(chosen.id);
+    } catch {
+      this.loadError.set(true);
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  /** Read-only load of ONE building (Super Admin inspection page). */
+  async loadSingle(id: string): Promise<void> {
+    this.readOnly.set(true);
+    this.loading.set(true);
+    this.loadError.set(false);
+    try {
+      const { data, error } = await this.db.from('buildings').select('*').eq('id', id).maybeSingle();
+      if (error) throw error;
+      const b = data as Building | null;
+      this.buildings.set(b ? [b] : []);
+      this.buildingId.set(b?.id ?? null);
+      if (b) await this.loadBuildingData(b.id);
     } catch {
       this.loadError.set(true);
     } finally {
@@ -120,20 +146,6 @@ export class AdminStore {
   }
 
   // ---------------------------------------------------------------- building
-
-  async createBuilding(draft: BuildingDraft): Promise<void> {
-    const ownerId = this.auth.user()?.id;
-    if (!ownerId) throw new Error('not allowed');
-    const { data, error } = await this.db
-      .from('buildings')
-      .insert({ ...draft, owner_id: ownerId })
-      .select()
-      .single();
-    if (error) throw error;
-    const b = data as Building;
-    this.buildings.update((list) => [...list, b]);
-    await this.switchBuilding(b.id);
-  }
 
   async updateBuilding(patch: Partial<Omit<Building, 'id' | 'owner_id' | 'created_at'>>): Promise<void> {
     const b = this.requireBuilding();
