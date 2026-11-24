@@ -104,7 +104,7 @@ Core: `core/public-api.ts` (fetch RPC, remembered slug), `core/access.service.ts
 | Supabase | org `tracker` (Free), project **building-committee** (Europe), ref `slqjhpvwsctwvajpnorq`; owner signs in with GitHub |
 | Supabase state | 001 + seed + **002 applied (2026-11-24)**; signups **off**; `samir.alholo.98@gmail.com` = **superadmin** and admin of `al-yasmin-14` |
 | Vercel | team `samir-alholos-projects` (Hobby), project `building-committee-app`, auto-deploys from `main`. **https://building-committee-app.vercel.app** |
-| Vercel env | `/api` needs `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (secret: set by Samir, never typed by an assistant) |
+| Vercel env | **Set 2026-11-24** (Production): `SUPABASE_URL` (config) + `SUPABASE_SERVICE_ROLE_KEY` (secret, pasted by Samir, never seen by an assistant) |
 | Keys | publishable key in `public-config.json`. Secret key only in the Supabase dashboard + Vercel env |
 
 ## 7. Configuration
@@ -166,3 +166,4 @@ Signals + `computed()` everywhere, `@for` tracked by id. Fixed a real bug: an `e
 | 2026-11-24 | Repo made **public** and pushed. Supabase project `building-committee` created (GitHub sign-in), migration + seed applied, public signups disabled, admin user created. Added `public-config.json` (URL + publishable key) as build/cron fallback. |
 | 2026-11-24 | Deployed to Vercel (Git-connected). Verified live: resident page with real data, admin guard, service worker active. |
 | 2026-11-24 | **v0.2**: migration 002 (profiles, building_admins, slug redirects, is_active, landing RPC, RLS rewrite) applied live; Samir promoted to superadmin. Super Admin portal + read-only inspect; `/api/superadmin/*` provisioning functions; role-aware login/guards; dynamic `/` (no hard-coded slug); perf split (−40% initial JS, no supabase-js for residents); safe SW caching, update banner, install banner + iOS guide; zoomable lightbox; UX fixes (`UI_UX_AUDIT.md`); `verify-security` script; keep-alive → `get_public_landing_state` at `0 6 */4 * *`. |
+| 2026-11-24 | Production verified as anon: 401 on units/profiles/building_admins/payments/buildings/slug_redirects and on `superadmin_overview`; dashboard has 0 `whatsapp_phone` and no payment notes; `/api/superadmin/*` deployed (401 without token). Vercel env vars set; redeploy to activate them. |
