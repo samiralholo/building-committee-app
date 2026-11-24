@@ -6,6 +6,7 @@
 //   SUPABASE_SERVICE_ROLE_KEY  Supabase secret key (sb_secret_…) or legacy service_role JWT
 // The service key is used ONLY here and never reaches the browser bundle.
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
+import { normalizePhone } from '../../src/app/core/phone-auth';
 
 export class HttpError extends Error {
   constructor(
@@ -75,17 +76,10 @@ export async function readBody<T>(req: Request): Promise<T> {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 export function requireUuid(value: unknown, field: string): string {
   if (typeof value !== 'string' || !UUID.test(value)) throw new HttpError(400, `قيمة غير صالحة: ${field}`);
   return value;
-}
-
-export function requireEmail(value: unknown): string {
-  const email = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  if (!EMAIL.test(email) || email.length > 254) throw new HttpError(400, 'البريد الإلكتروني غير صحيح');
-  return email;
 }
 
 export function requirePassword(value: unknown): string {
@@ -95,11 +89,11 @@ export function requirePassword(value: unknown): string {
   return value;
 }
 
-export function optionalPhone(value: unknown): string | null {
-  if (value === null || value === undefined || value === '') return null;
-  const digits = String(value).replace(/\D/g, '');
-  if (!/^[0-9]{8,15}$/.test(digits)) throw new HttpError(400, 'رقم الهاتف غير صحيح');
-  return digits;
+/** Same normalization as the app (src/app/core/phone-auth.ts). 400 with the Arabic message if invalid. */
+export function requirePhone(value: unknown): string {
+  const r = normalizePhone(typeof value === 'string' ? value : '');
+  if (!r.ok) throw new HttpError(400, r.error);
+  return r.phone;
 }
 
 export function cleanName(value: unknown): string {

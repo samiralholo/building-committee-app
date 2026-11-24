@@ -10,12 +10,10 @@ export const DELETE = handle(async (req) => {
   const buildingId = requireUuid(body.building_id, 'building_id');
   const userId = requireUuid(body.user_id, 'user_id');
 
-  const { error } = await serviceClient()
-    .from('building_admins')
-    .delete()
-    .eq('building_id', buildingId)
-    .eq('user_id', userId);
+  const admin = serviceClient();
+  const { error } = await admin.from('building_admins').delete().eq('building_id', buildingId).eq('user_id', userId);
   if (error) throw error;
 
-  return json(200, { ok: true });
+  const { data: profile } = await admin.from('profiles').select('full_name, phone').eq('id', userId).maybeSingle();
+  return json(200, { ok: true, user_id: userId, full_name: profile?.full_name ?? '', phone: profile?.phone ?? null });
 });
