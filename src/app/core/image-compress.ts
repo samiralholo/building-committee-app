@@ -71,8 +71,9 @@ export async function compressImage(file: File): Promise<CompressedImage> {
   return { blob, width, height, originalBytes: file.size };
 }
 
+/** "2.4MB" / "115KB" — Latin units read clearly next to the arrow in an RTL sentence. */
 export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} بايت`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} ك.ب`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} م.ب`;
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }

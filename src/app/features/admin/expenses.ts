@@ -6,6 +6,7 @@ import { compressImage, formatBytes } from '../../core/image-compress';
 import { Expense, ExpenseCategory } from '../../core/models';
 import { ToastService, arabicError } from '../../core/toast.service';
 import { Icon } from '../../shared/icon';
+import { Lightbox } from '../../shared/lightbox';
 import { Sheet } from '../../shared/sheet';
 import { AdminStore } from './admin-store';
 
@@ -18,7 +19,7 @@ interface Compressed {
 
 @Component({
   selector: 'app-expenses',
-  imports: [FormsModule, RouterLink, Icon, Sheet],
+  imports: [FormsModule, RouterLink, Icon, Sheet, Lightbox],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (!store.building()) {
@@ -50,9 +51,9 @@ interface Compressed {
           @for (e of list(); track e.id) {
             <li class="card flex items-center gap-3 p-3">
               @if (e.receipt_url) {
-                <a [href]="e.receipt_url" target="_blank" rel="noopener" class="shrink-0" aria-label="عرض الفاتورة">
+                <button type="button" class="shrink-0" aria-label="عرض الفاتورة" (click)="viewing.set(e)">
                   <img [src]="e.receipt_url" alt="" class="size-14 rounded-xl object-cover ring-1 ring-line" loading="lazy" />
-                </a>
+                </button>
               } @else {
                 <div class="flex size-14 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand">
                   <app-icon [name]="categoryMeta[e.category].icon" [size]="26" />
@@ -81,6 +82,13 @@ interface Compressed {
           }
         </ul>
       </div>
+
+      <app-lightbox
+        [src]="viewing()?.receipt_url ?? null"
+        [title]="viewing()?.title ?? ''"
+        [subtitle]="viewing() ? money(viewing()!.amount) + ' · ' + fmtDate(viewing()!.expense_date) : ''"
+        (closed)="viewing.set(null)"
+      />
 
       <app-sheet [open]="formOpen()" [title]="editing() ? 'تعديل مصروف' : 'مصروف جديد'" (closed)="close()">
         <form class="space-y-4" (ngSubmit)="save()">
@@ -145,8 +153,10 @@ interface Compressed {
             <span class="label">صورة الفاتورة</span>
             @if (compressed(); as c) {
               <img [src]="c.previewUrl" alt="معاينة الفاتورة" class="max-h-56 w-full rounded-xl object-contain" />
-              <p class="mt-2 text-center text-sm font-semibold text-paid">
-                ✓ انضغطت الصورة: {{ bytes(c.before) }} ← {{ bytes(c.after) }}
+              <p class="mt-2 flex items-center justify-center gap-2 rounded-xl bg-paid-bg px-3 py-2 text-center font-bold text-paid">
+                <app-icon name="check" [size]="18" [stroke]="3" />
+                انضغطت الصورة:
+                <span dir="ltr" class="num">{{ bytes(c.before) }} → {{ bytes(c.after) }}</span>
               </p>
               <button type="button" class="btn-ghost mt-1 w-full" (click)="clearCompressed()">
                 <app-icon name="x" [size]="18" /> إلغاء الصورة
@@ -212,6 +222,7 @@ export class Expenses {
   protected readonly removeExisting = signal(false);
   protected readonly saving = signal(false);
   protected readonly confirmDelete = signal(false);
+  protected readonly viewing = signal<Expense | null>(null);
 
   protected title = '';
   protected amount: number | null = null;

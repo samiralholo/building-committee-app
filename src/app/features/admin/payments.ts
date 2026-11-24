@@ -4,7 +4,7 @@ import { RouterLink } from '@angular/router';
 import { formatDate, formatMoney, formatNumber } from '../../core/format';
 import { whatsappReminder } from '../../core/messages';
 import { Payment, PaymentStatus, Unit } from '../../core/models';
-import { waHref } from '../../core/phone';
+import { isValidPhone, normalizePhone, waHref } from '../../core/phone';
 import { ToastService, arabicError } from '../../core/toast.service';
 import { Icon } from '../../shared/icon';
 import { Sheet } from '../../shared/sheet';
@@ -111,7 +111,7 @@ type Filter = 'all' | 'owing' | 'paid';
                 <button type="button" class="btn-secondary" (click)="openEdit(r)">
                   <app-icon name="pencil" [size]="18" /> تعديل / دفع جزئي
                 </button>
-                @if ((r.payment.status === 'unpaid' || r.payment.status === 'partial') && r.unit.whatsapp_phone) {
+                @if ((r.payment.status === 'unpaid' || r.payment.status === 'partial') && hasWhatsapp(r.unit)) {
                   <a class="btn-whatsapp" [href]="reminderHref(r)" target="_blank" rel="noopener">
                     <app-icon name="whatsapp" [size]="20" /> تذكير واتساب
                   </a>
@@ -149,19 +149,16 @@ type Filter = 'all' | 'owing' | 'paid';
           <form class="space-y-4" (ngSubmit)="saveEdit()">
             <p class="-mt-1 text-ink-soft">{{ e.unit.label }} · {{ store.selectedCycle()?.title }}</p>
 
-            <div class="flex min-h-12 items-center justify-between gap-3 rounded-xl bg-exempt-bg px-4">
+            <button
+              type="button"
+              role="switch"
+              [attr.aria-checked]="exempt"
+              class="flex min-h-14 w-full items-center justify-between gap-3 rounded-xl bg-exempt-bg px-4 text-start"
+              (click)="exempt = !exempt"
+            >
               <span class="font-bold text-exempt">شقة فارغة / معفى</span>
-              <button
-                type="button"
-                class="toggle"
-                role="switch"
-                [attr.aria-checked]="exempt"
-                aria-label="معفى"
-                (click)="exempt = !exempt"
-              >
-                <span class="toggle-knob"></span>
-              </button>
-            </div>
+              <span class="toggle" [attr.aria-checked]="exempt" aria-hidden="true"><span class="toggle-knob"></span></span>
+            </button>
 
             @if (!exempt) {
               <div class="grid grid-cols-2 gap-3">
@@ -269,6 +266,11 @@ export class Payments {
     if (paid >= due && (due > 0 || paid > 0)) return 'paid';
     if (paid > 0) return 'partial';
     return due === 0 ? 'paid' : 'unpaid';
+  }
+
+  /** Only offer WhatsApp when the stored number normalizes to valid international digits. */
+  protected hasWhatsapp(u: Unit): boolean {
+    return isValidPhone(normalizePhone(u.whatsapp_phone));
   }
 
   protected reminderHref(r: Row): string {

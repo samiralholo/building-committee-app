@@ -1,21 +1,23 @@
 {
   "$schema": "./node_modules/@angular/service-worker/config/schema.json",
   "index": "/index.html",
-  "navigationUrls": ["/**", "!/**/*.*", "!/**/*__*", "!/**/*__*/**"],
+  "navigationUrls": ["/**", "!/api/**", "!/**/*.*", "!/**/*__*", "!/**/*__*/**"],
+  "navigationRequestStrategy": "freshness",
   "assetGroups": [
     {
-      "name": "app",
+      "name": "app-shell",
       "installMode": "prefetch",
+      "updateMode": "prefetch",
       "resources": {
         "files": ["/favicon.ico", "/index.html", "/manifest.webmanifest", "/*.css", "/*.js"]
       }
     },
     {
-      "name": "assets",
-      "installMode": "lazy",
+      "name": "static-assets",
+      "installMode": "prefetch",
       "updateMode": "prefetch",
       "resources": {
-        "files": ["/**/*.(svg|cur|jpg|jpeg|png|apng|webp|avif|gif|otf|ttf|woff|woff2)"]
+        "files": ["/icons/**", "/*.svg", "/*.png"]
       }
     },
     {
@@ -27,11 +29,5 @@
       }
     }
   ],
-  "dataGroups": [
-    {
-      "name": "receipts",
-      "urls": ["https://*.supabase.co/storage/v1/object/public/receipts/**"],
-      "cacheConfig": { "strategy": "performance", "maxSize": 60, "maxAge": "30d" }
-    }
-  ]
+  "dataGroups": []
 }

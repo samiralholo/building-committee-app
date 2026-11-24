@@ -44,11 +44,11 @@ import { AdminStore } from './admin-store';
                   }
                 </p>
               </div>
-              <div class="flex flex-col">
-                <button type="button" class="btn-icon size-10" aria-label="لفوق" [disabled]="first || moving()" (click)="move(u, -1)">
+              <div class="flex">
+                <button type="button" class="btn-icon" aria-label="لفوق" [disabled]="first || moving()" (click)="move(u, -1)">
                   <app-icon name="arrowUp" [size]="18" />
                 </button>
-                <button type="button" class="btn-icon size-10" aria-label="لتحت" [disabled]="last || moving()" (click)="move(u, 1)">
+                <button type="button" class="btn-icon" aria-label="لتحت" [disabled]="last || moving()" (click)="move(u, 1)">
                   <app-icon name="arrowDown" [size]="18" />
                 </button>
               </div>
@@ -105,19 +105,16 @@ import { AdminStore } from './admin-store';
               }
             </p>
           </div>
-          <div class="flex min-h-12 items-center justify-between gap-3 rounded-xl bg-page px-4">
+          <button
+            type="button"
+            role="switch"
+            [attr.aria-checked]="occupied"
+            class="flex min-h-14 w-full items-center justify-between gap-3 rounded-xl bg-page px-4 text-start"
+            (click)="occupied = !occupied"
+          >
             <span class="font-bold">{{ occupied ? 'مسكونة' : 'فارغة (معفاة من الدفع)' }}</span>
-            <button
-              type="button"
-              class="toggle"
-              role="switch"
-              [attr.aria-checked]="occupied"
-              aria-label="مسكونة"
-              (click)="occupied = !occupied"
-            >
-              <span class="toggle-knob"></span>
-            </button>
-          </div>
+            <span class="toggle" [attr.aria-checked]="occupied" aria-hidden="true"><span class="toggle-knob"></span></span>
+          </button>
 
           <button type="submit" class="btn-primary w-full text-lg" [disabled]="saving() || !label.trim() || !residentName.trim()">
             حفظ

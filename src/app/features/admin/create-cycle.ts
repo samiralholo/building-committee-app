@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ARABIC_MONTHS, currentMonthTitle, formatMoney, todayIso } from '../../core/format';
 import { CycleType } from '../../core/models';
@@ -118,10 +118,12 @@ export class CreateCycle {
     // Reset the form with smart defaults every time the sheet opens.
     effect(() => {
       if (!this.open()) return;
-      this.type.set('monthly');
-      this.title = this.suggestMonthTitle();
-      this.amount = Number(this.store.building()?.default_monthly_fee ?? 0);
-      this.date = todayIso();
+      untracked(() => {
+        this.type.set('monthly');
+        this.title = this.suggestMonthTitle();
+        this.amount = Number(this.store.building()?.default_monthly_fee ?? 0);
+        this.date = todayIso();
+      });
     });
   }
 

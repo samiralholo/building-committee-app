@@ -1,9 +1,10 @@
 import { ChangeDetectionStrategy, Component, effect, inject, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import QRCode from 'qrcode';
 import { slugify } from '../../core/format';
 import { copyText, publicBuildingUrl } from '../../core/messages';
+import { makeQrDataUrl, printElevatorPoster } from '../../core/qr-poster';
+import { ChangePassword } from '../../shared/change-password';
 import { EmergencyContact } from '../../core/models';
 import { isValidPhone, normalizePhone } from '../../core/phone';
 import { ToastService, arabicError } from '../../core/toast.service';
@@ -14,7 +15,7 @@ const ROLE_SUGGESTIONS = ['مشرف البناء', 'سبّاك', 'كهربجي',
 
 @Component({
   selector: 'app-settings',
-  imports: [FormsModule, RouterLink, Icon],
+  imports: [FormsModule, RouterLink, Icon, ChangePassword],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (!store.building()) {
@@ -56,7 +57,9 @@ const ROLE_SUGGESTIONS = ['مشرف البناء', 'سبّاك', 'كهربجي',
             <label class="label" for="s-slug">رمز البناء (بالرابط)</label>
             <input id="s-slug" name="slug" class="field text-start" dir="ltr" required [(ngModel)]="slug" (blur)="slug = slugify(slug)" />
             @if (slugify(slug) !== store.building()!.slug) {
-              <p class="mt-1 text-sm font-semibold text-partial">⚠️ إذا غيّرت الرمز، الـ QR القديم والرابط القديم ما عاد يشتغلوا.</p>
+              <p class="mt-1 text-sm font-semibold text-partial">
+                ℹ️ الـ QR القديم بالمصعد رح يضل شغال ويحوّل للرمز الجديد. بس اطبع ورقة جديدة لاحقاً.
+              </p>
             }
           </div>
           <div class="grid grid-cols-2 gap-3">
@@ -77,22 +80,19 @@ const ROLE_SUGGESTIONS = ['مشرف البناء', 'سبّاك', 'كهربجي',
               </datalist>
             </div>
           </div>
-          <div class="flex min-h-12 items-center justify-between gap-3 rounded-xl bg-page px-4 py-2">
-            <div>
-              <p class="font-bold">إخفاء أسماء السكان</p>
-              <p class="text-sm text-ink-soft">بالصفحة العامة بيظهر اسم الشقة والطابق بس</p>
-            </div>
-            <button
-              type="button"
-              class="toggle"
-              role="switch"
-              [attr.aria-checked]="hideNames"
-              aria-label="إخفاء أسماء السكان"
-              (click)="hideNames = !hideNames"
-            >
-              <span class="toggle-knob"></span>
-            </button>
-          </div>
+          <button
+            type="button"
+            role="switch"
+            [attr.aria-checked]="hideNames"
+            class="flex min-h-14 w-full items-center justify-between gap-3 rounded-xl bg-page px-4 py-2 text-start"
+            (click)="hideNames = !hideNames"
+          >
+            <span>
+              <span class="block font-bold">إخفاء أسماء السكان</span>
+              <span class="block text-sm text-ink-soft">بالصفحة العامة بيظهر اسم الشقة والطابق بس</span>
+            </span>
+            <span class="toggle" [attr.aria-checked]="hideNames" aria-hidden="true"><span class="toggle-knob"></span></span>
+          </button>
         </section>
 
         <!-- Announcement -->
@@ -147,6 +147,13 @@ const ROLE_SUGGESTIONS = ['مشرف البناء', 'سبّاك', 'كهربجي',
           }
         </section>
 
+        <!-- Account -->
+        <section class="card space-y-2 p-4">
+          <h2 class="flex items-center gap-2 text-lg font-extrabold"><app-icon name="key" /> حسابي</h2>
+          <p class="text-ink-soft">غيّر كلمة السر اللي وصلتك من المشرف العام بكلمة بتعرفها لحالك.</p>
+          <button type="button" class="btn-secondary w-full" (click)="pwOpen.set(true)"><app-icon name="key" [size]="18" /> تغيير كلمة السر</button>
+        </section>
+
         <div class="fixed inset-x-0 bottom-16 z-20 border-t border-line bg-white/95 p-3 backdrop-blur lg:bottom-0">
           <div class="mx-auto max-w-5xl">
             <button type="submit" class="btn-primary w-full text-lg" [disabled]="saving()">
@@ -155,6 +162,7 @@ const ROLE_SUGGESTIONS = ['مشرف البناء', 'سبّاك', 'كهربجي',
           </div>
         </div>
       </form>
+      <app-change-password [open]="pwOpen()" (closed)="pwOpen.set(false)" />
     }
   `,
 })
@@ -167,6 +175,7 @@ export class Settings {
   protected readonly roles = ROLE_SUGGESTIONS;
 
   protected readonly saving = signal(false);
+  protected readonly pwOpen = signal(false);
   protected readonly qr = signal<string>('');
   protected readonly publicUrl = signal('');
   protected readonly contacts = signal<EmergencyContact[]>([]);
@@ -200,14 +209,7 @@ export class Settings {
 
   private async renderQr(url: string): Promise<void> {
     try {
-      this.qr.set(
-        await QRCode.toDataURL(url, {
-          width: 720,
-          margin: 2,
-          errorCorrectionLevel: 'M',
-          color: { dark: '#0F766E', light: '#FFFFFF' },
-        }),
-      );
+      this.qr.set(await makeQrDataUrl(url));
     } catch {
       this.qr.set('');
     }
@@ -233,27 +235,7 @@ export class Settings {
   protected printPoster(): void {
     const b = this.store.building();
     if (!b || !this.qr()) return;
-    const w = window.open('', '_blank', 'width=800,height=1000');
-    if (!w) {
-      this.toast.error('اسمح بالنوافذ المنبثقة للطباعة');
-      return;
-    }
-    const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
-    w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(b.name)}</title>
-      <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;800&display=swap" rel="stylesheet">
-      <style>
-        body{font-family:Cairo,system-ui,sans-serif;text-align:center;color:#1E293B;margin:0;padding:48px 32px}
-        h1{font-size:40px;font-weight:800;margin:0 0 8px} h2{font-size:28px;color:#0F766E;margin:0 0 24px}
-        img{width:420px;height:420px} p{font-size:24px;margin:16px 0} .url{direction:ltr;font-size:20px;color:#475569}
-        .box{border:4px solid #0F766E;border-radius:32px;padding:32px;max-width:640px;margin:0 auto}
-      </style></head><body><div class="box">
-      <h1>${esc(b.name)}</h1><h2>صندوق البناء 🏢</h2>
-      <img src="${this.qr()}" alt="QR">
-      <p>📱 امسح الكود بكاميرا التلفون</p>
-      <p>شوف مين دفع، المصاريف والفواتير، وأرقام الطوارئ</p>
-      <p class="url">${esc(this.publicUrl())}</p>
-      </div><script>window.onload=function(){setTimeout(function(){window.print()},400)}</script></body></html>`);
-    w.document.close();
+    if (!printElevatorPoster(b.name, this.publicUrl(), this.qr())) this.toast.error('اسمح بالنوافذ المنبثقة للطباعة');
   }
 
   protected async save(): Promise<void> {
