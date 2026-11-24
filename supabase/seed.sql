@@ -2,16 +2,17 @@
 --  لجنة البناء — Seed data (one pilot building)
 --
 --  ⚠️ BEFORE running this file:
---    1. Run supabase/migrations/001_initial_schema.sql
+--    1. Run supabase/migrations/001_initial_schema.sql, then 002_superadmin_and_roles.sql
 --    2. Create your admin user: Supabase Dashboard → Authentication → Users
 --       → "Add user" → "Create new user" (email + password, tick "Auto Confirm User")
 --
---  This seed links the building to the OLDEST user in auth.users
---  (i.e. the admin you just created). To link it to a different account later:
+--  This seed assigns the building to the OLDEST user in auth.users
+--  (i.e. the admin you just created). To assign another admin later, use the
+--  Super Admin portal (/superadmin) or:
 --
---    update public.buildings
---    set owner_id = (select id from auth.users where email = 'you@example.com')
---    where slug = 'al-yasmin-14';
+--    insert into public.building_admins (building_id, user_id)
+--    select b.id, u.id from public.buildings b, auth.users u
+--    where b.slug = 'al-yasmin-14' and u.email = 'someone@example.com';
 --
 --  Safe to re-run: it deletes and recreates the 'al-yasmin-14' building.
 -- =====================================================================
@@ -50,6 +51,9 @@ begin
       {"name": "شركة الأمان للمصاعد", "role": "فني المصعد", "phone": "963966000444"}
     ]'::jsonb
   );
+
+  insert into public.building_admins (building_id, user_id) values (v_building, v_owner)
+  on conflict (building_id, user_id) do nothing;
 
   insert into public.units (id, building_id, label, floor, sort_order, resident_name, whatsapp_phone, is_occupied) values
     (u1, v_building, 'طابق 1 - يمين', 1, 1, 'أبو أحمد الحلبي',  '963933111001', true),
