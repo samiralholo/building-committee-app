@@ -188,16 +188,22 @@
                   </option>
                 }
               </select>
-              @if (floors().length > 1) {
+              @if (cycleFloors().length > 1) {
                 <label class="sr-only" for="floor">الطابق</label>
                 <select id="floor" class="field" (change)="onFloorChange($event)">
                   <option value="">كل الطوابق</option>
-                  @for (f of floors(); track f) {
-                    <option [value]="f">طابق {{ f }}</option>
+                  @for (f of cycleFloors(); track f) {
+                    <option [value]="f">{{ f === 0 ? 'الطابق الأرضي' : 'طابق ' + f }}</option>
                   }
                 </select>
               }
             </div>
+
+            @if (selectiveCount(); as n) {
+              <p class="flex items-center gap-2 rounded-xl bg-sky-50 px-3 py-2 text-sm font-bold text-sky-900">
+                <app-icon name="users" [size]="18" /> دورة مخصصة — تشمل <span class="num">{{ n }}</span> شقة
+              </p>
+            }
 
             <div class="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1" role="group" aria-label="فلترة حسب الحالة">
               <button type="button" class="chip" [class.chip-active]="statusFilter() === 'all'" (click)="statusFilter.set('all')">

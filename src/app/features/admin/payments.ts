@@ -12,6 +12,7 @@ import { StatusBadge } from '../../shared/status-badge';
 import { AdminStore } from './admin-store';
 import { CreateCycle } from './create-cycle';
 import { CycleSelect } from './cycle-select';
+import { UnitPicker } from './unit-picker';
 
 interface Row {
   unit: Unit;
@@ -22,7 +23,7 @@ type Filter = 'all' | 'owing' | 'paid';
 
 @Component({
   selector: 'app-payments',
-  imports: [FormsModule, RouterLink, Icon, Sheet, StatusBadge, CycleSelect, CreateCycle],
+  imports: [FormsModule, RouterLink, Icon, Sheet, StatusBadge, CycleSelect, CreateCycle, UnitPicker],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (!store.building()) {
@@ -66,15 +67,11 @@ type Filter = 'all' | 'owing' | 'paid';
           </button>
         </div>
 
-        @if (missingCount() > 0) {
-          <div class="flex flex-wrap items-center gap-3 rounded-xl bg-partial-bg p-3 text-partial">
-            <app-icon name="info" />
-            <p class="flex-1 font-semibold">
-              في <span class="num">{{ missingCount() }}</span> شقة مش مضافة لهالدورة (انضافت بعد إنشائها).
-            </p>
-            <button type="button" class="btn-secondary" [disabled]="busyMissing()" (click)="addMissing()">إضافتها</button>
-          </div>
-        }
+        <!-- Which units this cycle covers (selective billing) -->
+        <button type="button" class="chip w-full justify-between" (click)="openScope()" aria-haspopup="dialog">
+          <span class="flex items-center gap-2"><app-icon name="users" [size]="18" /> الشقق المشمولة</span>
+          <span class="num">({{ includedCount() }} من {{ store.units().length }})</span>
+        </button>
 
         <ul class="space-y-2">
           @for (r of rows(); track r.payment.id) {
@@ -205,6 +202,34 @@ type Filter = 'all' | 'owing' | 'paid';
           </form>
         }
       </app-sheet>
+
+      <!-- تعديل الشقق المشمولة -->
+      <app-sheet [open]="scopeOpen()" title="تعديل الشقق المشمولة" [wide]="true" (closed)="scopeOpen.set(false)">
+        <div class="space-y-4">
+          <p class="text-ink-soft">
+            الشقق المحددة بتدفع «{{ store.selectedCycle()?.title }}». الشقة اللي بتشيلها ما بتظهر بهالدورة أبداً وما بينحسب عليها شي.
+          </p>
+          <app-unit-picker [units]="store.units()" [groups]="store.groups()" [selected]="scopeIds()" (selectedChange)="scopeIds.set($event); confirmPaidRemoval.set(false)" />
+          @if (confirmPaidRemoval() && paidRemovals().length) {
+            <div class="space-y-2 rounded-2xl border-2 border-unpaid/40 bg-unpaid-bg p-4" role="alert">
+              <p class="font-extrabold text-unpaid">هذه الشقة دفعت مبلغاً في هذه الدورة — هل تريد إزالتها وحذف دفعتها؟</p>
+              <ul class="text-unpaid">
+                @for (r of paidRemovals(); track r.payment.id) {
+                  <li>• {{ r.unit?.resident_name }} — {{ r.unit?.label }}: <span class="num">{{ money(r.payment.amount_paid) }}</span></li>
+                }
+              </ul>
+              <div class="grid grid-cols-2 gap-2">
+                <button type="button" class="btn-danger" [disabled]="busyScope()" (click)="saveScope()">نعم، أزلها واحذف دفعتها</button>
+                <button type="button" class="btn-secondary" (click)="confirmPaidRemoval.set(false)">رجوع</button>
+              </div>
+            </div>
+          } @else {
+            <button type="button" class="btn-primary w-full text-lg" [disabled]="busyScope() || scopeIds().length === 0" (click)="saveScope()">
+              حفظ ({{ scopeIds().length }} شقة)
+            </button>
+          }
+        </div>
+      </app-sheet>
     }
   `,
 })
@@ -215,7 +240,10 @@ export class Payments {
   protected readonly showCreate = signal(false);
   protected readonly filter = signal<Filter>('all');
   protected readonly busy = signal<ReadonlySet<string>>(new Set());
-  protected readonly busyMissing = signal(false);
+  protected readonly scopeOpen = signal(false);
+  protected readonly scopeIds = signal<string[]>([]);
+  protected readonly confirmPaidRemoval = signal(false);
+  protected readonly busyScope = signal(false);
   protected readonly confirmDelete = signal(false);
   protected readonly editing = signal<Row | null>(null);
   protected readonly saving = signal(false);
@@ -254,7 +282,7 @@ export class Payments {
     };
   });
 
-  protected readonly missingCount = computed(() => this.store.units().length - this.allRows().length);
+  protected readonly includedCount = computed(() => this.allRows().length);
 
   protected half(): number {
     return Math.round((Number(this.amountDue) || 0) / 2);
@@ -328,19 +356,47 @@ export class Payments {
     }
   }
 
-  protected async addMissing(): Promise<void> {
+  // ------------------------------------------------ included units of the selected cycle
+
+  protected openScope(): void {
+    this.scopeIds.set(this.store.includedUnitIds(this.store.selectedCycle()?.id));
+    this.confirmPaidRemoval.set(false);
+    this.scopeOpen.set(true);
+  }
+
+  /** Units being taken out of the cycle that already paid something. */
+  protected readonly paidRemovals = computed(() => {
+    const keep = new Set(this.scopeIds());
+    const byId = new Map(this.store.units().map((u) => [u.id, u]));
+    return this.store
+      .paymentsFor(this.store.selectedCycle()?.id)
+      .filter((p) => !keep.has(p.unit_id) && Number(p.amount_paid) > 0)
+      .map((p) => ({ payment: p, unit: byId.get(p.unit_id) }));
+  });
+
+  protected async saveScope(): Promise<void> {
     const cycle = this.store.selectedCycle();
     if (!cycle) return;
-    this.busyMissing.set(true);
+    if (this.scopeIds().length === 0) {
+      this.toast.error('اختر شقة وحدة على الأقل');
+      return;
+    }
+    if (this.paidRemovals().length && !this.confirmPaidRemoval()) {
+      this.confirmPaidRemoval.set(true); // show the warning first
+      return;
+    }
+    this.busyScope.set(true);
     try {
-      const n = await this.store.addMissingPayments(cycle);
-      this.toast.success(`تمت إضافة ${n} شقة ✓`);
+      const r = await this.store.setCycleUnits(cycle, this.scopeIds(), this.confirmPaidRemoval());
+      this.toast.success(r.added || r.removed ? `تم ✓ أضفنا ${r.added} وشلنا ${r.removed}` : 'ما في تغيير');
+      this.scopeOpen.set(false);
     } catch (err) {
-      this.toast.error(arabicError(err));
+      this.toast.error(arabicError(err, 'ما انحفظ التعديل'));
     } finally {
-      this.busyMissing.set(false);
+      this.busyScope.set(false);
     }
   }
+
 
   protected async deleteCycle(): Promise<void> {
     const cycle = this.store.selectedCycle();

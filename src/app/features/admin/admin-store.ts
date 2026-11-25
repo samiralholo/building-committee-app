@@ -2,7 +2,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { AccessService } from '../../core/access.service';
 import { RECEIPTS_BUCKET } from '../../core/config';
 import { deriveStatus, remaining } from '../../core/format';
-import { BillingCycle, Building, CycleType, Expense, Payment, Unit } from '../../core/models';
+import { BillingCycle, Building, CycleType, Expense, Payment, Unit, UnitGroup } from '../../core/models';
 import { SupabaseService } from '../../core/supabase.service';
 
 const SELECTED_BUILDING_KEY = 'bc:admin-building';
@@ -34,6 +34,8 @@ export class AdminStore {
   readonly cycles = signal<BillingCycle[]>([]);
   readonly payments = signal<Payment[]>([]);
   readonly expenses = signal<Expense[]>([]);
+  /** Saved subscriber groups (e.g. «مشتركو المصعد») with their member unit ids. */
+  readonly groups = signal<UnitGroup[]>([]);
   readonly loading = signal(true);
   readonly loadError = signal(false);
   /** Super Admin inspection: data is shown, every mutation is hidden (RLS also blocks it). */
@@ -55,6 +57,11 @@ export class AdminStore {
 
   paymentsFor(cycleId: string | null | undefined): Payment[] {
     return cycleId ? this.payments().filter((p) => p.cycle_id === cycleId) : [];
+  }
+
+  /** Unit ids that have a row in this cycle (the cycle's "included units"). */
+  includedUnitIds(cycleId: string | null | undefined): string[] {
+    return this.paymentsFor(cycleId).map((p) => p.unit_id);
   }
 
   // ---------------------------------------------------------------- loading
@@ -133,10 +140,32 @@ export class AdminStore {
     ]);
     const err = units.error ?? cycles.error ?? payments.error ?? expenses.error;
     if (err) throw err;
+    // Groups are a convenience: never block the admin screens if they can't load.
+    await this.loadGroups(buildingId).catch(() => this.groups.set([]));
     this.units.set(sortUnits((units.data ?? []) as Unit[]));
     this.cycles.set(sortCycles((cycles.data ?? []) as BillingCycle[]));
     this.payments.set((payments.data ?? []) as Payment[]);
     this.expenses.set(sortExpenses((expenses.data ?? []) as Expense[]));
+  }
+
+  private async loadGroups(buildingId: string): Promise<void> {
+    const { data: gs, error } = await this.db.from('unit_groups').select('*').eq('building_id', buildingId);
+    if (error) throw error;
+    const groups = (gs ?? []) as Omit<UnitGroup, 'unit_ids'>[];
+    let members: { group_id: string; unit_id: string }[] = [];
+    if (groups.length) {
+      const { data: ms, error: mErr } = await this.db
+        .from('unit_group_members')
+        .select('group_id, unit_id')
+        .in('group_id', groups.map((g) => g.id));
+      if (mErr) throw mErr;
+      members = (ms ?? []) as typeof members;
+    }
+    this.groups.set(
+      groups
+        .map((g) => ({ ...g, unit_ids: members.filter((m) => m.group_id === g.id).map((m) => m.unit_id) }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'ar')),
+    );
   }
 
   private requireBuilding(): Building {
@@ -156,14 +185,23 @@ export class AdminStore {
 
   // ---------------------------------------------------------------- cycles
 
-  async createCycle(input: { title: string; cycle_type: CycleType; amount: number; date: string }): Promise<BillingCycle> {
+  /** unitIds omitted = every unit (vacant ones exempt), exactly as before. */
+  async createCycle(input: {
+    title: string;
+    cycle_type: CycleType;
+    amount: number;
+    date: string;
+    unitIds?: string[];
+  }): Promise<BillingCycle> {
     const b = this.requireBuilding();
+    if (input.unitIds && input.unitIds.length === 0) throw new Error('no units selected');
     const { data, error } = await this.db.rpc('create_billing_cycle', {
       p_building_id: b.id,
       p_title: input.title,
       p_cycle_type: input.cycle_type,
       p_amount: input.amount,
       p_cycle_date: input.date,
+      ...(input.unitIds ? { p_unit_ids: input.unitIds } : {}),
     });
     if (error) throw error;
     const cycle = data as BillingCycle;
@@ -184,28 +222,69 @@ export class AdminStore {
     if (this.selectedCycleId() === cycle.id) this.selectedCycleId.set(null);
   }
 
-  /** Units added after a cycle was created get their payment row with one tap. */
-  async addMissingPayments(cycle: BillingCycle): Promise<number> {
+  /**
+   * Make the cycle cover exactly `unitIds`: adds rows (unpaid at the cycle amount; vacant → exempt)
+   * and deletes rows of units taken out. Rows with money paid are only removed when `allowPaidRemoval`.
+   */
+  async setCycleUnits(cycle: BillingCycle, unitIds: string[], allowPaidRemoval = false): Promise<{ added: number; removed: number }> {
     const b = this.requireBuilding();
-    const existing = new Set(this.paymentsFor(cycle.id).map((p) => p.unit_id));
-    const missing = this.units().filter((u) => !existing.has(u.id));
-    if (!missing.length) return 0;
-    const { data, error } = await this.db
-      .from('payments')
-      .insert(
-        missing.map((u) => ({
-          building_id: b.id,
-          cycle_id: cycle.id,
-          unit_id: u.id,
-          amount_due: u.is_occupied ? cycle.default_amount : 0,
-          amount_paid: 0,
-          status: u.is_occupied ? 'unpaid' : 'exempt',
-        })),
-      )
-      .select();
+    const wanted = new Set(unitIds);
+    const current = this.paymentsFor(cycle.id);
+    const currentIds = new Set(current.map((p) => p.unit_id));
+    const toAdd = this.units().filter((u) => wanted.has(u.id) && !currentIds.has(u.id));
+    const toRemove = current.filter((p) => !wanted.has(p.unit_id));
+    if (!allowPaidRemoval && toRemove.some((p) => Number(p.amount_paid) > 0)) throw new Error('paid units selected for removal');
+    if (wanted.size === 0) throw new Error('no units selected');
+
+    if (toAdd.length) {
+      const { data, error } = await this.db
+        .from('payments')
+        .insert(
+          toAdd.map((u) => ({
+            building_id: b.id,
+            cycle_id: cycle.id,
+            unit_id: u.id,
+            amount_due: u.is_occupied ? cycle.default_amount : 0,
+            amount_paid: 0,
+            status: u.is_occupied ? 'unpaid' : 'exempt',
+          })),
+        )
+        .select();
+      if (error) throw error;
+      this.payments.update((list) => [...list, ...((data ?? []) as Payment[])]);
+    }
+    if (toRemove.length) {
+      const ids = toRemove.map((p) => p.id);
+      const { error } = await this.db.from('payments').delete().in('id', ids);
+      if (error) throw error;
+      const gone = new Set(ids);
+      this.payments.update((list) => list.filter((p) => !gone.has(p.id)));
+    }
+    return { added: toAdd.length, removed: toRemove.length };
+  }
+
+  // ---------------------------------------------------------------- groups
+
+  /** Create (or update by id / same name) a subscriber group with its members, in one call. */
+  async saveGroup(name: string, unitIds: string[], groupId?: string): Promise<UnitGroup> {
+    const b = this.requireBuilding();
+    const { data, error } = await this.db.rpc('save_unit_group', {
+      p_building_id: b.id,
+      p_name: name.trim(),
+      p_unit_ids: unitIds,
+      ...(groupId ? { p_group_id: groupId } : {}),
+    });
     if (error) throw error;
-    this.payments.update((list) => [...list, ...((data ?? []) as Payment[])]);
-    return missing.length;
+    await this.loadGroups(b.id);
+    const saved = data as Omit<UnitGroup, 'unit_ids'>;
+    return this.groups().find((g) => g.id === saved.id) ?? { ...saved, unit_ids: unitIds };
+  }
+
+  /** Deletes only the group (units and payment history are untouched). */
+  async deleteGroup(group: UnitGroup): Promise<void> {
+    const { error } = await this.db.from('unit_groups').delete().eq('id', group.id);
+    if (error) throw error;
+    this.groups.update((list) => list.filter((g) => g.id !== group.id));
   }
 
   // ---------------------------------------------------------------- payments
@@ -282,6 +361,7 @@ export class AdminStore {
     if (error) throw error;
     this.units.update((list) => list.filter((u) => u.id !== unit.id));
     this.payments.update((list) => list.filter((p) => p.unit_id !== unit.id));
+    this.groups.update((list) => list.map((g) => ({ ...g, unit_ids: g.unit_ids.filter((id) => id !== unit.id) })));
   }
 
   /** Swap with the neighbour above/below. Re-numbers everything so order is always clean. */
@@ -381,6 +461,7 @@ export class AdminStore {
     this.cycles.set([]);
     this.payments.set([]);
     this.expenses.set([]);
+    this.groups.set([]);
     this.selectedCycleId.set(null);
   }
 }

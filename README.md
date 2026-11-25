@@ -35,6 +35,7 @@ A super admin can also be assigned to a building as its admin (then `/admin` man
    1. [`supabase/migrations/001_initial_schema.sql`](supabase/migrations/001_initial_schema.sql)
    2. [`supabase/migrations/002_superadmin_and_roles.sql`](supabase/migrations/002_superadmin_and_roles.sql)
    3. [`supabase/migrations/003_phone_auth_admins.sql`](supabase/migrations/003_phone_auth_admins.sql)
+   4. [`supabase/migrations/004_unit_groups_and_selective_cycles.sql`](supabase/migrations/004_unit_groups_and_selective_cycles.sql)
 3. **Authentication → Sign In / Providers** → turn **off** “Allow new users to sign up”.
 4. **Authentication → Users → Add user → Create new user** (your email + password, “Auto Confirm User”).
 5. **Promote yourself to Super Admin** — SQL Editor, one command:
@@ -43,7 +44,7 @@ A super admin can also be assigned to a building as its admin (then `/admin` man
    ```
 6. Optional sample data: run [`supabase/seed.sql`](supabase/seed.sql) (building `al-yasmin-14`, assigned to the oldest user).
 
-> Upgrading? Run only the migrations you haven't run yet (all are idempotent). From v0.1: 002 + 003 + step 5. From v0.2: 003.
+> Upgrading? Run only the migrations you haven't run yet (all are idempotent). From v0.1: 002 + 003 + 004 + step 5. From v0.2: 003 + 004. From v0.3: 004.
 > Existing building owners are migrated automatically into `building_admins`.
 
 ### 2. Vercel
@@ -95,6 +96,23 @@ anywhere (UI, WhatsApp messages, API responses). People only ever see and type t
 - **Forgot password:** «نسيت كلمة المرور؟» on `/admin/login` opens WhatsApp to the **support number** set by the super admin
   (`/superadmin` → «واتساب الدعم»; stored in `platform_settings`, exposed only through `get_support_whatsapp()`).
   The super admin then sets a new password from «تعيين / إدارة المشرف» and sends it back with «إرسال عبر واتساب».
+
+---
+
+## Fees for some apartments only (selective billing)
+
+Elevator, generator («أمبير») or pump fees often apply to only some apartments (e.g. 20 of 30).
+
+- **إنشاء شهر جديد / دفعة جديدة** → «مين بيدفع هالدورة؟»: **كل الشقق المأهولة** (default, unchanged 1 click) or
+  **شقق محددة / مجموعة اشتراك**: tap a saved group chip, or tick units (select all / none, one tap per floor), with a live
+  «تم اختيار 20 من 30 شقة». Optionally «حفظ هذه الشقق كمجموعة للاستخدام الشهري» → next month is 1 tap.
+- Only the chosen units get a payment row. Units without a row are **not included**: they are not "unpaid", not "exempt",
+  they don't appear in that cycle anywhere (resident list, progress, report, CSV, inspect) and add nothing to arrears.
+- **/admin/payments** → «الشقق المشمولة (20 من 30)»: add/remove units of an existing cycle. Removing a unit that already
+  paid asks first («هذه الشقة دفعت مبلغاً في هذه الدورة — هل تريد إزالتها وحذف دفعتها؟»). «تعديل / دفع جزئي» still sets
+  a different amount for one apartment.
+- **/admin/units** → «مجموعات الاشتراك»: create / rename / edit members / delete (deleting a group never touches units or payments).
+- Residents see «دورة مخصصة — تشمل 20 شقة» under the cycle selector and «تم تحصيل 14 من 20 شقة».
 
 ---
 
@@ -158,7 +176,7 @@ The last building visited is remembered, so the home-screen icon opens it direct
 
 ```
 api/                        Vercel functions (server-only, service key)
-supabase/migrations/        001 schema · 002 roles, redirects, landing RPC · 003 phone login, platform_settings
+supabase/migrations/        001 schema · 002 roles, redirects, landing RPC · 003 phone login, platform_settings · 004 subscriber groups, selective cycles
 tests/                      unit tests (node --test, TypeScript via type stripping)
 supabase/seed.sql           pilot sample data
 src/app/core/               config, fetch-based public API, auth/access, guards, formatting, WhatsApp/CSV/QR helpers

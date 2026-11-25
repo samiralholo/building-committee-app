@@ -40,6 +40,7 @@ export function cycleReportRows(opts: {
     [building.name],
     ['الدورة', cycle.title],
     ['العملة', building.currency],
+    ['الشقق المشمولة', `${payments.filter((p) => p.cycle_id === cycle.id).length} من ${units.length}`],
     [],
     ['الدفعات'],
     ['الشقة', 'الطابق', 'الساكن', 'الحالة', 'المطلوب', 'المدفوع', 'الباقي', 'تاريخ الدفع', 'ملاحظات'],

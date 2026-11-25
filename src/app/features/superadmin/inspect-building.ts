@@ -91,6 +91,13 @@ type Section = 'payments' | 'expenses' | 'settings';
                   <option [value]="c.id" [selected]="c.id === currentCycleId()">{{ c.title }}</option>
                 }
               </select>
+              <p class="rounded-xl bg-page px-3 py-2 text-sm font-bold text-ink-soft">
+                @if (rows().length < store.units().length) {
+                  دورة مخصصة — تشمل <span class="num text-ink">{{ rows().length }}</span> من <span class="num text-ink">{{ store.units().length }}</span> شقة
+                } @else {
+                  تشمل كل الشقق (<span class="num text-ink">{{ rows().length }}</span>)
+                }
+              </p>
               <p class="font-bold text-ink-soft">
                 <span class="num text-paid">{{ cycleSummary().paid }}</span> خالص ·
                 <span class="num text-unpaid">{{ cycleSummary().owing }}</span> عليهم باقي ·
@@ -215,7 +222,11 @@ export class InspectBuilding {
 
   protected readonly rows = computed(() => {
     const byUnit = new Map(this.store.paymentsFor(this.currentCycleId()).map((p) => [p.unit_id, p]));
-    return this.store.units().map((unit): { unit: Unit; payment: Payment | undefined } => ({ unit, payment: byUnit.get(unit.id) }));
+    // Only units included in this cycle (selective cycles list just their subscribers)
+    return this.store
+      .units()
+      .filter((unit) => byUnit.has(unit.id))
+      .map((unit): { unit: Unit; payment: Payment | undefined } => ({ unit, payment: byUnit.get(unit.id) }));
   });
 
   protected readonly cycleSummary = computed(() => {

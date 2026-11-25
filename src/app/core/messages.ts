@@ -54,6 +54,7 @@ export function whatsappMonthlyReport(opts: {
   const lines: string[] = [
     `🏢 *${building.name}*`,
     `📅 ${cycle.title}`,
+    ...(rows.length < units.length ? [`👥 دورة مخصصة: تشمل ${rows.length} شقة`] : []),
     '',
     `💰 رصيد صندوق البناء: *${money(fundBalance)}*`,
     `📥 المقبوض هالدورة: ${money(collected)}`,

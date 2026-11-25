@@ -116,10 +116,23 @@ export class PublicBuilding {
     return map;
   });
 
+  /** Only the units INCLUDED in the selected cycle (a selective cycle, e.g. elevator, lists only its subscribers). */
   protected readonly allRows = computed<Row[]>(() => {
     const byUnit = this.paymentsByCycle().get(this.selectedCycleId()) ?? new Map<string, Payment>();
-    return (this.data()?.units ?? []).map((unit) => ({ unit, payment: byUnit.get(unit.id) }));
+    return (this.data()?.units ?? []).filter((unit) => byUnit.has(unit.id)).map((unit) => ({ unit, payment: byUnit.get(unit.id) }));
   });
+
+  /** Units in the building vs units in this cycle → "دورة مخصصة — تشمل 20 شقة". */
+  protected readonly selectiveCount = computed<number | null>(() => {
+    const d = this.data();
+    if (!d) return null;
+    const total = d.total_units ?? d.units.length;
+    const inCycle = this.allRows().length;
+    return inCycle > 0 && inCycle < total ? inCycle : null;
+  });
+
+  /** Floors that have units in the selected cycle. */
+  protected readonly cycleFloors = computed(() => [...new Set(this.allRows().map((r) => r.unit.floor))].sort((a, b) => a - b));
 
   protected readonly rows = computed<Row[]>(() => {
     const status = this.statusFilter();
@@ -133,6 +146,7 @@ export class PublicBuilding {
   });
 
   protected readonly progress = computed(() => {
+    // Included units only, exempt excluded — the same rule as the server's per-cycle stats.
     const billable = this.allRows().filter((r) => r.payment && r.payment.status !== 'exempt');
     const paid = billable.filter((r) => r.payment!.status === 'paid').length;
     const collected = billable.reduce((s, r) => s + Number(r.payment!.amount_paid), 0);

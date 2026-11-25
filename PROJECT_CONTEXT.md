@@ -4,7 +4,7 @@
 > **Update it with every change** (add a change-log row and adjust any section that changed). Mirrored to the
 > claude.ai Project "Construction Committee" so every new session starts from the same picture.
 
-_Last updated: 2026-11-24 (v0.3) · Owner: Samir (GitHub `samiralholo`)_
+_Last updated: 2026-11-25 (v0.4) · Owner: Samir (GitHub `samiralholo`)_
 
 ---
 
@@ -87,7 +87,18 @@ digits, amounts ≥ 0, categories), composite FKs so a payment/expense can't cro
   only `support_whatsapp_phone`.
 - `get_my_access()` also returns `phone`.
 
-Tested in PGlite with Supabase stubs: **42 checks** (002) + **65 checks** (003: SQL/TS parity, cleanup, unique index, RLS on 9 tables, settings roles) (upgrade path 001 → old seed → 002 twice, every role, storage, renames).
+### Migration 004 (`supabase/migrations/004_unit_groups_and_selective_cycles.sql`, idempotent)
+- `unit_groups (id, building_id, name, created_at, UNIQUE(building_id,name))`, `unit_group_members (group_id, unit_id, PK)`,
+  trigger `unit_group_members_same_building` (unit and group must share the building), helper `unit_group_building(group_id)`.
+- RLS on both: anon none; assigned admin full CRUD; superadmin SELECT only.
+- `save_unit_group(building, name, unit_ids[], group_id?)` (invoker): upsert by id or name, replace members, ignores foreign units.
+- `create_billing_cycle(..., p_unit_ids uuid[] default null)`: null = every unit (vacant → exempt) as before; otherwise rows
+  ONLY for the given units (empty / foreign-only → error `no units selected`). Old 5-arg signature dropped (no overload ambiguity).
+- `get_public_building_dashboard`: adds `total_units` and per-cycle `scope_units_count` (rows incl. exempt),
+  `included_units_count`, `paid_units_count`, `total_due`, `total_collected` (exempt excluded). Groups are NOT in the public payload.
+- **Rule:** a unit with no payments row in a cycle is "not included": not unpaid, not exempt, no arrears.
+
+Tested in PGlite with Supabase stubs: **41 checks** (004) + **42 checks** (002) + **65 checks** (003: SQL/TS parity, cleanup, unique index, RLS on 9 tables, settings roles) (upgrade path 001 → old seed → 002 twice, every role, storage, renames).
 
 ## 5. App map
 
@@ -96,7 +107,7 @@ Tested in PGlite with Supabase stubs: **42 checks** (002) + **65 checks** (003: 
 | `/` | `features/landing/landing.ts` | — | remembered slug (`last_visited_building_slug`, validated via landing RPC) → single active building → code form |
 | `/b/:slug` | `features/public/public-building.{ts,html}` | — | fetch RPC, network-first (saved copy only offline), canonical-slug redirect, install banner, zoomable lightbox |
 | `/admin/login` | `features/admin/login.ts` | `guestGuard` | one field «رقم الموبايل أو البريد الإلكتروني» → `resolveLoginIdentifier`; role-aware redirect; «نسيت كلمة المرور؟» → support WhatsApp |
-| `/admin/**` | `features/admin/*` (`admin.routes.ts`) | `buildingAdminGuard` | `AdminStore` loads **assigned** buildings only (switcher if >1); "not assigned" screen otherwise |
+| `/admin/**` | `features/admin/*` (`admin.routes.ts`) | `buildingAdminGuard` | `AdminStore` loads **assigned** buildings only (switcher if >1) + subscriber groups; "not assigned" screen otherwise. Create-cycle scope «كل الشقق المأهولة» / «شقق محددة / مجموعة اشتراك» (`unit-picker.ts`: group chips, select all/none, floor checkbox, live counter, save-as-group); payments «الشقق المشمولة (X من Y)» sheet (`setCycleUnits`, paid-removal warning); units «مجموعات الاشتراك» |
 | `/superadmin` | `features/superadmin/overview.ts`, `manage-building.ts` | `superAdminGuard` | KPIs, search, support-WhatsApp card, create building (auto slug), add admin (name + phone + password), «تعديل الرقم», reset password, credentials → copy / «إرسال عبر واتساب», edit/disable/delete |
 | `/superadmin/buildings/:id` | `features/superadmin/inspect-building.ts` | `superAdminGuard` | `AdminStore.loadSingle` read-only; banner «وضع المعاينة (سوبر أدمن - للقراءة فقط)»; zero mutation buttons |
 | `/api/superadmin/*` | `api/superadmin/*.ts`, `api/_lib/admin.ts` | JWT + `profiles.role` | create-building-admin (POST, phone), update-admin-phone (POST), remove-building-admin (DELETE), reset-admin-password (POST) |
@@ -157,6 +168,9 @@ Signals + `computed()` everywhere, `@for` tracked by id. Fixed a real bug: an `e
 - **Forgot password = WhatsApp to the platform admin** (free), who resets it from `/superadmin`.
 - **Phones inside Arabic messages** use one unbroken token (`0912345678`, or LRM + `+971…`): spaced groups get reordered
   by the bidi algorithm in RTL text («678 345 912 963+»).
+- **Selective billing = absence of a payments row** (no flag column): truthful by construction, every view already keyed on
+  rows. "Custom cycle" badge = cycle rows < building units. Vacant units picked in a selective cycle get `exempt` rows,
+  same rule as the default mode. Groups are a convenience (load failures never block admin screens).
 - **Public config committed:** URL + publishable key in `public-config.json` (browser-safe by design).
 
 ## 10. Verification done (v0.2)
@@ -178,6 +192,18 @@ Signals + `computed()` everywhere, `@for` tracked by id. Fixed a real bug: an `e
   edit → old number rejected, new works; reset → message with phone; removal. `phone.lajna.app` found in 0 rendered pages.
 - Bundle unchanged (main 76.5 KB gz).
 
+### v0.4 verification (selective billing)
+- Audit before change: creation always billed every unit (non-subscribers forced to «معفى»); resident list and inspect showed
+  non-included units with «—»; admin payments nagged «في X شقة مش مضافة». Progress, drawer, arrears, report and CSV were already row-based.
+- PGlite: 41 checks (anon 401 on both tables and the save RPC, cross-building trigger, admin isolation, superadmin read-only,
+  subset rows only, empty selection rejected, 5-arg 1-click call = all units, per-cycle stats, no groups in public payload, cascades).
+- Local E2E (mock Supabase + real migrations): group «مشتركو المصعد» via floor toggles (5 units) → elevator cycle from the group
+  chip → exactly 5 rows; pill (5 من 8); add a unit / remove an unpaid unit; paid removal shows the Arabic warning, then removes;
+  WhatsApp report and CSV list only the 4 included units (with the scope line); resident page «دورة مخصصة — تشمل 4 شقة»,
+  «تم تحصيل 1 من 4», only those 4 listed, non-subscriber drawer has no elevator cycle; regular 1-click cycle → all 8;
+  superadmin inspect «تشمل 4 من 8» with 0 mutation buttons; zero-selection blocked; 0 page errors.
+- Bundle: initial 83.1 KB gz (was 82.8), resident chunk 8.2 KB (was 8.0); picker/groups live in admin lazy chunks.
+
 ## 11. Backlog / ideas
 
 - Self-service password reset without the platform admin would need an OTP provider (not free) — intentionally skipped.
@@ -195,3 +221,4 @@ Signals + `computed()` everywhere, `@for` tracked by id. Fixed a real bug: an `e
 | 2026-11-24 | Production verified as anon: 401 on units/profiles/building_admins/payments/buildings/slug_redirects and on `superadmin_overview`; dashboard has 0 `whatsapp_phone` and no payment notes; `/api/superadmin/*` deployed (401 without token). Vercel env vars set; redeploy to activate them. |
 | 2026-11-24 | **v0.3 — phone login for building admins**: shared `phone-auth.ts` (+13 unit tests), migration 003 (normalized unique phones, `platform_settings`, `get_support_whatsapp`, `get_my_access.phone`) applied live; API create-by-phone + `update-admin-phone`; smart login field; «نسيت كلمة المرور؟» via support WhatsApp; super admin phone UI, «تعديل الرقم», «إرسال عبر واتساب»; synthetic emails never displayed. |
 | 2026-11-24 | Vercel build failure on intermediate commit `c92df6e` (TS2459: `normalizePhone` no longer exported by `core/phone`, still imported by `manage-building.ts`) — already fixed in `f1874ef`; verified with a clean clone. Added CI workflow (typecheck, unit tests, build, security scan) so a broken commit is caught on GitHub. Lesson: each pushed commit must build on its own. |
+| 2026-11-25 | **v0.4 — selective unit billing & subscriber groups**: migration 004 (`unit_groups`, `unit_group_members`, RLS, `save_unit_group`, `create_billing_cycle(p_unit_ids)`, per-cycle stats + `total_units` in the public RPC); create-cycle scope + reusable groups; «الشقق المشمولة» editor with paid-removal warning; «مجموعات الاشتراك» in units; resident badge/denominator/list, report, CSV and inspect use included units only. |

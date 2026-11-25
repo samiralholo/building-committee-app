@@ -1,16 +1,17 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { Unit } from '../../core/models';
+import { Unit, UnitGroup } from '../../core/models';
 import { isValidPhone, phoneDigits, prettyPhone, tidyPhoneInput } from '../../core/phone';
 import { ToastService, arabicError } from '../../core/toast.service';
 import { Icon } from '../../shared/icon';
 import { Sheet } from '../../shared/sheet';
 import { AdminStore } from './admin-store';
+import { UnitPicker } from './unit-picker';
 
 @Component({
   selector: 'app-units',
-  imports: [FormsModule, RouterLink, Icon, Sheet],
+  imports: [FormsModule, RouterLink, Icon, Sheet, UnitPicker],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (!store.building()) {
@@ -26,6 +27,27 @@ import { AdminStore } from './admin-store';
           </h2>
           <button type="button" class="btn-primary" (click)="openNew()"><app-icon name="plus" /> إضافة شقة</button>
         </div>
+
+        <!-- مجموعات الاشتراك (e.g. elevator subscribers) -->
+        <section class="card space-y-2 p-3" aria-label="مجموعات الاشتراك">
+          <div class="flex items-center justify-between gap-2 ps-1">
+            <h3 class="flex items-center gap-2 font-extrabold"><app-icon name="users" [size]="20" /> مجموعات الاشتراك</h3>
+            <button type="button" class="btn-secondary px-3 text-sm" [disabled]="store.units().length === 0" (click)="openGroup(null)">
+              <app-icon name="plus" [size]="18" /> مجموعة جديدة
+            </button>
+          </div>
+          @for (g of store.groups(); track g.id) {
+            <button type="button" class="flex min-h-12 w-full items-center gap-3 rounded-xl bg-page px-4 py-2 text-start" (click)="openGroup(g)">
+              <span class="min-w-0 flex-1 truncate font-bold">{{ g.name }}</span>
+              <span class="num rounded-full bg-brand-soft px-2.5 py-0.5 text-sm text-brand">{{ g.unit_ids.length }} شقة</span>
+              <app-icon name="pencil" [size]="18" class="text-ink-soft" />
+            </button>
+          } @empty {
+            <p class="px-1 text-sm text-ink-soft">
+              مثلاً «مشتركو المصعد» أو «مشتركو الأمبير»: احفظ الشقق مرة وحدة، وكل شهر اختارها بضغطة عند إنشاء الدورة.
+            </p>
+          }
+        </section>
 
         <ul class="space-y-2">
           @for (u of store.units(); track u.id; let first = $first, last = $last) {
@@ -135,6 +157,32 @@ import { AdminStore } from './admin-store';
           }
         </form>
       </app-sheet>
+
+      <app-sheet [open]="groupOpen()" [title]="editingGroup() ? 'تعديل المجموعة' : 'مجموعة اشتراك جديدة'" [wide]="true" (closed)="groupOpen.set(false)">
+        <form class="space-y-4" (ngSubmit)="saveGroup()">
+          <div>
+            <label class="label" for="g-name">اسم المجموعة</label>
+            <input id="g-name" name="gname" class="field" required placeholder="مشتركو المصعد" [(ngModel)]="groupName" />
+          </div>
+          <app-unit-picker [units]="store.units()" [(selected)]="groupIds" />
+          <button type="submit" class="btn-primary w-full text-lg" [disabled]="busyGroup() || !groupName.trim()">
+            حفظ ({{ groupIds().length }} شقة)
+          </button>
+          @if (editingGroup(); as g) {
+            @if (!confirmGroupDelete()) {
+              <button type="button" class="btn-ghost w-full text-unpaid" (click)="confirmGroupDelete.set(true)">
+                <app-icon name="trash" [size]="18" /> حذف المجموعة
+              </button>
+            } @else {
+              <p class="text-center font-bold text-unpaid">بتنحذف المجموعة بس — الشقق والدفعات القديمة بتضل متل ما هي.</p>
+              <div class="grid grid-cols-2 gap-2">
+                <button type="button" class="btn-danger" [disabled]="busyGroup()" (click)="deleteGroup(g)">نعم، احذف</button>
+                <button type="button" class="btn-secondary" (click)="confirmGroupDelete.set(false)">إلغاء</button>
+              </div>
+            }
+          }
+        </form>
+      </app-sheet>
     }
   `,
 })
@@ -151,6 +199,48 @@ export class Units {
   protected readonly saving = signal(false);
   protected readonly moving = signal(false);
   protected readonly confirmDelete = signal(false);
+
+  // subscriber groups
+  protected readonly groupOpen = signal(false);
+  protected readonly editingGroup = signal<UnitGroup | null>(null);
+  protected readonly groupIds = signal<string[]>([]);
+  protected readonly busyGroup = signal(false);
+  protected readonly confirmGroupDelete = signal(false);
+  protected groupName = '';
+
+  protected openGroup(g: UnitGroup | null): void {
+    this.editingGroup.set(g);
+    this.groupName = g?.name ?? '';
+    this.groupIds.set(g ? [...g.unit_ids] : []);
+    this.confirmGroupDelete.set(false);
+    this.groupOpen.set(true);
+  }
+
+  protected async saveGroup(): Promise<void> {
+    this.busyGroup.set(true);
+    try {
+      await this.store.saveGroup(this.groupName, this.groupIds(), this.editingGroup()?.id);
+      this.toast.success('تم حفظ المجموعة ✓');
+      this.groupOpen.set(false);
+    } catch (err) {
+      this.toast.error(arabicError(err, 'ما انحفظت المجموعة'));
+    } finally {
+      this.busyGroup.set(false);
+    }
+  }
+
+  protected async deleteGroup(g: UnitGroup): Promise<void> {
+    this.busyGroup.set(true);
+    try {
+      await this.store.deleteGroup(g);
+      this.toast.success('تم حذف المجموعة');
+      this.groupOpen.set(false);
+    } catch (err) {
+      this.toast.error(arabicError(err));
+    } finally {
+      this.busyGroup.set(false);
+    }
+  }
 
   protected label = '';
   protected floor = 1;

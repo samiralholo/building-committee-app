@@ -44,6 +44,22 @@ export interface BillingCycle {
   default_amount: number;
   cycle_date: string;
   created_at: string;
+  // Public dashboard only (computed from INCLUDED units; exempt excluded except in scope):
+  /** Units that have a row in this cycle (incl. exempt). Fewer than total_units ⇒ selective cycle. */
+  scope_units_count?: number;
+  included_units_count?: number;
+  paid_units_count?: number;
+  total_due?: number;
+  total_collected?: number;
+}
+
+/** Reusable subscriber group (e.g. «مشتركو المصعد»). Admin-only. */
+export interface UnitGroup {
+  id: string;
+  building_id: string;
+  name: string;
+  created_at: string;
+  unit_ids: string[];
 }
 
 export interface Payment {
@@ -94,6 +110,8 @@ export interface PublicDashboard {
     fund_balance: number;
     last_updated: string | null;
   };
+  /** Number of units in the building (to tell selective cycles apart). */
+  total_units?: number;
   cycles: BillingCycle[];
   units: PublicUnit[];
   payments: Payment[];
