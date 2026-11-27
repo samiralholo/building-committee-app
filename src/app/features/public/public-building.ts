@@ -18,6 +18,8 @@ import {
   formatNumber,
   formatRelative,
   remaining,
+  floorName,
+  unitPlace,
 } from '../../core/format';
 import { Expense, Payment, PublicDashboard, PublicUnit } from '../../core/models';
 import { prettyPhone, telHref, waHref } from '../../core/phone';
@@ -62,6 +64,8 @@ function writeCache(slug: string, data: PublicDashboard): void {
   templateUrl: './public-building.html',
 })
 export class PublicBuilding {
+  protected readonly floorName = floorName;
+  protected readonly unitPlace = unitPlace;
   private readonly router = inject(Router);
 
   /** Route param `/b/:slug` (bound via withComponentInputBinding). */

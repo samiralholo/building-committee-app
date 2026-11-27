@@ -4,7 +4,7 @@
 > **Update it with every change** (add a change-log row and adjust any section that changed). Mirrored to the
 > claude.ai Project "Construction Committee" so every new session starts from the same picture.
 
-_Last updated: 2026-11-25 (v0.4) · Owner: Samir (GitHub `samiralholo`)_
+_Last updated: 2026-11-27 (v0.4.1) · Owner: Samir (GitHub `samiralholo`)_
 
 ---
 
@@ -124,7 +124,7 @@ Core: `core/phone-auth.ts` (**shared** by app, `/api` and tests: `normalizePhone
 | --- | --- |
 | GitHub | `github.com/samiralholo/building-committee-app`, **public** (GitHub blocks private repos for this account's region); Claude GitHub App installed on this repo only |
 | Supabase | org `tracker` (Free), project **building-committee** (Europe), ref `slqjhpvwsctwvajpnorq`; owner signs in with GitHub |
-| Supabase state | 001 + seed + **002** + **003 applied (2026-11-24)** + **004 applied (2026-11-25)**; signups **off**; `samir.alholo.98@gmail.com` = **superadmin** and admin of `al-yasmin-14` |
+| Supabase state | Migrations 001–004 applied. **Data reset 2026-11-27**: demo «بناء الياسمين» (`al-yasmin-14`) deleted; only real building **«بناء المصرية» (`al-masriya`)** — 22 occupied homes (of 37; the other 15 not entered yet), floors القبو(-1)…7; services 50,000/home/month (تشرين الأول 2026 all paid, تشرين الثاني 2026 19/22 paid); special cycle «المصعد» for 13 subscribers (75,000 floors 5–7, 50,000 floors 2–4, all unpaid); groups «مشتركو المصعد — 75 ألف» (7) and «— 50 ألف» (6). Building admin to be added by the superadmin from /superadmin (ابو رأفت, by phone). Signups **off**; `samir.alholo.98@gmail.com` = **superadmin** (no longer a building admin) |
 | Vercel | team `samir-alholos-projects` (Hobby), project `building-committee-app`, auto-deploys from `main`. **https://building-committee-app.vercel.app** |
 | Vercel env | **Set 2026-11-24** (Production): `SUPABASE_URL` (config) + `SUPABASE_SERVICE_ROLE_KEY` (secret, pasted by Samir, never seen by an assistant) |
 | Keys | publishable key in `public-config.json`. Secret key only in the Supabase dashboard + Vercel env |
@@ -171,6 +171,8 @@ Signals + `computed()` everywhere, `@for` tracked by id. Fixed a real bug: an `e
 - **Selective billing = absence of a payments row** (no flag column): truthful by construction, every view already keyed on
   rows. "Custom cycle" badge = cycle rows < building units. Vacant units picked in a selective cycle get `exempt` rows,
   same rule as the default mode. Groups are a convenience (load failures never block admin screens).
+- **Floors:** negative = basement («القبو»), 0 = «الطابق الأرضي»; one helper `floorName()` / `unitPlace()` in `core/format.ts`
+  (label shown once when it already is the floor name). Resident names live only in the database, never in the repo.
 - **Public config committed:** URL + publishable key in `public-config.json` (browser-safe by design).
 
 ## 10. Verification done (v0.2)
@@ -223,3 +225,4 @@ Signals + `computed()` everywhere, `@for` tracked by id. Fixed a real bug: an `e
 | 2026-11-24 | Vercel build failure on intermediate commit `c92df6e` (TS2459: `normalizePhone` no longer exported by `core/phone`, still imported by `manage-building.ts`) — already fixed in `f1874ef`; verified with a clean clone. Added CI workflow (typecheck, unit tests, build, security scan) so a broken commit is caught on GitHub. Lesson: each pushed commit must build on its own. |
 | 2026-11-25 | **v0.4 — selective unit billing & subscriber groups**: migration 004 (`unit_groups`, `unit_group_members`, RLS, `save_unit_group`, `create_billing_cycle(p_unit_ids)`, per-cycle stats + `total_units` in the public RPC); create-cycle scope + reusable groups; «الشقق المشمولة» editor with paid-removal warning; «مجموعات الاشتراك» in units; resident badge/denominator/list, report, CSV and inspect use included units only. |
 | 2026-11-25 | Migration 004 applied live (2 RLS tables, 8 policies, single 6-arg `create_billing_cycle`, anon no grant, dashboard stats present). Production anon: 401 on `unit_groups`, `unit_group_members`, `save_unit_group`, units, payments, buildings. CI green; Vercel serves the v0.4 build. |
+| 2026-11-27 | Production data reset; «بناء المصرية» loaded (22 homes, 2 services months, elevator cycle with 75k/50k per floor band, 2 subscriber groups). Basement support: `floorName()`/`unitPlace()` used by the resident page, unit picker and units list. |

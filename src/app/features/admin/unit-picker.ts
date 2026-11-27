@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, input, model } from '@angular/core';
 import { Unit, UnitGroup } from '../../core/models';
-import { formatNumber } from '../../core/format';
+import { floorName, formatNumber } from '../../core/format';
 import { Icon } from '../../shared/icon';
 
 interface FloorBlock {
@@ -45,7 +45,7 @@ interface FloorBlock {
       <div class="space-y-2">
         @for (f of floors(); track f.floor) {
           <fieldset class="overflow-hidden rounded-2xl border border-line">
-            <legend class="sr-only">طابق {{ f.floor }}</legend>
+            <legend class="sr-only">{{ floorName(f.floor) }}</legend>
             <button
               type="button"
               role="checkbox"
@@ -58,7 +58,7 @@ interface FloorBlock {
                 @if (floorState(f) === 'all') { <app-icon name="check" [size]="16" [stroke]="3" /> }
                 @if (floorState(f) === 'some') { <app-icon name="minus" [size]="16" [stroke]="3" /> }
               </span>
-              <span class="flex-1">{{ f.floor === 0 ? 'الطابق الأرضي' : 'طابق ' + f.floor }}</span>
+              <span class="flex-1">{{ floorName(f.floor) }}</span>
               <span class="num text-sm text-ink-soft">{{ countOn(f) }}/{{ f.units.length }}</span>
             </button>
             <ul class="divide-y divide-line">
@@ -98,6 +98,7 @@ export class UnitPicker {
   readonly selected = model<string[]>([]);
 
   protected readonly fmt = formatNumber;
+  protected readonly floorName = floorName;
   private readonly selectedSet = computed(() => new Set(this.selected()));
 
   protected readonly floors = computed<FloorBlock[]>(() => {

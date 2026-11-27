@@ -140,3 +140,15 @@ export function suggestSlug(name: string): string {
   const latin = [...cleaned].map((ch) => AR_TO_LATIN[ch] ?? ch).join('');
   return slugify(latin);
 }
+
+/** Arabic floor name: negative = basement, 0 = ground floor. */
+export function floorName(floor: number): string {
+  if (floor < 0) return floor === -1 ? 'القبو' : `القبو ${-floor}`;
+  return floor === 0 ? 'الطابق الأرضي' : `طابق ${floor}`;
+}
+
+/** Unit label plus its floor, without repeating the floor when the label already is the floor name. */
+export function unitPlace(label: string, floor: number): string {
+  const f = floorName(floor);
+  return !label || label.trim() === f ? f : `${label} · ${f}`;
+}

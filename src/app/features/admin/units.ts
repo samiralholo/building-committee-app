@@ -1,3 +1,4 @@
+import { unitPlace } from '../../core/format';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -60,7 +61,7 @@ import { UnitPicker } from './unit-picker';
                   }
                 </p>
                 <p class="truncate text-sm text-ink-soft">
-                  {{ u.label }} · طابق {{ u.floor }}
+                  {{ unitPlace(u.label, u.floor) }}
                   @if (u.whatsapp_phone) {
                     · <span dir="ltr" class="num font-normal">{{ pretty(u.whatsapp_phone) }}</span>
                   }
@@ -193,6 +194,7 @@ export class Units {
   protected readonly normalize = tidyPhoneInput;
   protected readonly valid = isValidPhone;
   protected readonly pretty = prettyPhone;
+  protected readonly unitPlace = unitPlace;
 
   protected readonly formOpen = signal(false);
   protected readonly editing = signal<Unit | null>(null);
